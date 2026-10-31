@@ -115,10 +115,16 @@ def parse_price(html):
     return None
 
 
-def parse_list_price(html):
-    m = re.findall(r'data-a-strike="true"[^>]*>\s*<span class="a-offscreen">\s*\$([0-9]+(?:\.[0-9]{1,2})?)', html)
-    if m:
-        return float(m[0])
+def parse_list_price(html, current_price=None):
+    """划线原价。必须高于现价，否则是解析错误（页面里还有其他商品的划线价）"""
+    candidates = re.findall(
+        r'data-a-strike="true"[^>]*>\s*<span class="a-offscreen">\s*\$([0-9]+(?:\.[0-9]{1,2})?)',
+        html
+    )
+    for c in candidates:
+        v = float(c)
+        if current_price is None or v > current_price:
+            return v
     return None
 
 
@@ -167,14 +173,29 @@ def parse_title(html):
 
 
 def parse_rating(html):
-    m = re.search(r'([0-9.]+)\s+out of 5 stars', html)
+    """主商品评分。必须限定在主商品区块，否则会抓到推荐位的其他商品评分（导致抖动误报）"""
+    # 优先：acrPopover 的 title（主商品专属）
+    m = re.search(r'id="acrPopover"[^>]*title="([0-9.]+)\s+out of 5 stars"', html)
+    if m:
+        return float(m.group(1))
+    # 兜底：averageCustomerReviews 区块内
+    m = re.search(r'id="averageCustomerReviews".{0,800}?([0-9.]+)\s+out of 5 stars', html, re.S)
     if m:
         return float(m.group(1))
     return None
 
 
 def parse_reviews(html):
-    m = re.search(r'([0-9,]+)\s+ratings', html)
+    """主商品评论数。页面里 'N ratings' 大量出现且多为推荐位商品，不能直接取第一个"""
+    # 优先：acrCustomerReviewText（主商品评论数，aria-label="3,432 Reviews"）
+    m = re.search(r'id="acrCustomerReviewText"[^>]*aria-label="([0-9,]+)\s+Reviews?"', html)
+    if m:
+        return int(m.group(1).replace(",", ""))
+    m = re.search(r'id="acrCustomerReviewText"[^>]*>\s*\(([0-9,]+)\)', html)
+    if m:
+        return int(m.group(1).replace(",", ""))
+    # 次选：total-review-count（"3,432 global ratings"）
+    m = re.search(r'data-hook="total-review-count"[^>]*>\s*([0-9,]+)\s+global ratings', html)
     if m:
         return int(m.group(1).replace(",", ""))
     return None
@@ -530,7 +551,8 @@ def compare_and_alert(asin_info, old, new):
     new_reviews = new.get("reviews")
     if old_reviews and new_reviews and old_reviews > 0:
         growth_pct = (new_reviews - old_reviews) / old_reviews * 100
-        if growth_pct >= 20:
+        # 上限保护：单轮暴涨 >150% 基本是页面抓到别的变体，不预警
+        if growth_pct >= 20 and growth_pct <= 150:
             alerts.append({"type": "评论激增", "detail": f"{name}({asin}) 评论数快速增长: {old_reviews} → {new_reviews} ({growth_pct:+.1f}%)"})
 
     old_discount = old.get("discount") if old else None
@@ -570,13 +592,21 @@ def main():
         log(f"抓取 {name} ({asin}) ...")
         try:
             html = fetch_page(asin, config)
+            cur_price = parse_price(html)
+            lst_price = parse_list_price(html, cur_price)
+            # 折扣优先按价格自算（页面上的 "N% off" 可能来自其他商品）
+            if cur_price and lst_price and lst_price > cur_price:
+                calc_discount = round((lst_price - cur_price) / lst_price * 100)
+            else:
+                calc_discount = parse_discount(html)
+
             new_data = {
                 "asin": asin,
                 "name": name,
                 "title": parse_title(html),
-                "price": parse_price(html),
-                "list_price": parse_list_price(html),
-                "discount": parse_discount(html),
+                "price": cur_price,
+                "list_price": lst_price,
+                "discount": calc_discount,
                 "stock": parse_stock(html),
                 "bsr": parse_bsr(html),
                 "sub_bsr": parse_sub_bsr(html),
@@ -584,10 +614,15 @@ def main():
                 "reviews": parse_reviews(html),
                 "time": now,
             }
+            # 评论数只增不减：若比基线变小，视为页面解析抖动，保留旧值不覆盖
+            old_data = history.get(asin)
+            if old_data and new_data["reviews"] and old_data.get("reviews"):
+                if new_data["reviews"] < old_data["reviews"]:
+                    log(f"  ⚠ 评论数异常回退 {old_data['reviews']} → {new_data['reviews']}，判定为页面抖动，沿用旧值")
+                    new_data["reviews"] = old_data["reviews"]
             log(f"  → 价格: {new_data['price']} | 原价: {new_data['list_price']} | 折扣: {new_data['discount']}% | 库存: {new_data['stock']} | 大类BSR: {new_data['bsr']} | 小类BSR: {new_data['sub_bsr']} | 评分: {new_data['rating']} | 评论数: {new_data['reviews']}")
             log(f"  → 标题: {new_data['title']}")
 
-            old_data = history.get(asin)
             if not init_mode and old_data:
                 alerts = compare_and_alert(asin_info, old_data, new_data)
                 all_alerts.extend(alerts)
