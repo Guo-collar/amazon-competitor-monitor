@@ -289,6 +289,7 @@ ALERT_EMOJI = {
     "小类BSR变化": "📈",
     "评分变化": "⭐",
     "评论激增": "💬",
+    "抓取异常": "⚠️",
     "测试": "🧪",
 }
 
@@ -597,6 +598,7 @@ def main():
     history = load_history()
     now = bjnow()
     all_alerts = []
+    failed_asins = []
 
     for asin_info in config["asins"]:
         asin = asin_info["asin"]
@@ -605,6 +607,9 @@ def main():
         try:
             html = fetch_page(asin, config)
             cur_price = parse_price(html)
+            # 校验：正常商品页必有价格。解析不到价格说明拿到的是验证页/异常页（反爬拦截）
+            if cur_price is None:
+                raise ValueError(f"页面未解析到价格（长度 {len(html)} 字节），疑似被反爬拦截或页面改版")
             lst_price = parse_list_price(html, cur_price)
             # 折扣优先按价格自算（页面上的 "N% off" 可能来自其他商品）
             if cur_price and lst_price and lst_price > cur_price:
@@ -644,7 +649,18 @@ def main():
             history[asin] = new_data
             time.sleep(config["request"].get("delay_between_asins", 5))
         except Exception as e:
+            failed_asins.append(f"{name}({asin})")
             log(f"  ✗ {name} ({asin}) 抓取异常: {e}")
+
+    # 抓取失败必须告警，否则反爬拦截会导致静默失效（用户以为"没消息=正常"）
+    if failed_asins:
+        total = len(config["asins"])
+        if len(failed_asins) == total:
+            detail = f"全部 {total} 个竞品抓取失败，本轮监控失效，需检查：{'、'.join(failed_asins)}"
+        else:
+            detail = f"{len(failed_asins)}/{total} 个竞品抓取失败：{'、'.join(failed_asins)}"
+        all_alerts.append({"type": "抓取异常", "detail": detail})
+        log(f"  ⚠ 预警: [抓取异常] {detail}")
 
     save_history(history)
 
