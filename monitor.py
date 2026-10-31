@@ -116,16 +116,26 @@ def parse_price(html):
 
 
 def parse_list_price(html, current_price=None):
-    """划线原价。必须高于现价，否则是解析错误（页面里还有其他商品的划线价）"""
+    """划线原价。规则：
+    1) 必须高于现价（划线价低于现价是解析错误）
+    2) 取最接近现价的候选（页面里还有其他商品/套装的划线价）
+    3) 不超过现价 5 倍（超过基本是抓到了别的商品）
+    """
     candidates = re.findall(
         r'data-a-strike="true"[^>]*>\s*<span class="a-offscreen">\s*\$([0-9]+(?:\.[0-9]{1,2})?)',
         html
     )
-    for c in candidates:
-        v = float(c)
-        if current_price is None or v > current_price:
-            return v
-    return None
+    if not candidates:
+        return None
+    if current_price is None:
+        return float(candidates[0])
+    valid = [float(c) for c in candidates if float(c) > current_price]
+    if not valid:
+        return None
+    best = min(valid)  # 最接近现价的合法值
+    if best > current_price * 5:
+        return None
+    return best
 
 
 def parse_discount(html):
