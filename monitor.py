@@ -198,9 +198,11 @@ def send_email(alerts, config):
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_pass = os.environ.get("SMTP_PASS", "")
     alert_to = os.environ.get("ALERT_TO", "")
+
     if not (smtp_host and smtp_user and smtp_pass and alert_to):
-        log("  未配置 SMTP 环境变量，跳过邮件发送")
-        return
+        log("  邮件未发送：缺少 SMTP 配置")
+        log(f"    检查 SMTP_HOST={'已设置' if smtp_host else '缺失'} / SMTP_USER={'已设置' if smtp_user else '缺失'} / SMTP_PASS={'已设置' if smtp_pass else '缺失'} / ALERT_TO={'已设置' if alert_to else '缺失'}")
+        return False
 
     try:
         smtp_port = int(os.environ.get("SMTP_PORT", "465"))
@@ -223,8 +225,10 @@ def send_email(alerts, config):
         server.sendmail(smtp_user, [alert_to], msg.as_string())
         server.quit()
         log(f"  预警邮件已发送至 {alert_to}")
+        return True
     except Exception as e:
-        log(f"  邮件发送失败: {e}")
+        log(f"  邮件发送失败: {type(e).__name__}: {e}")
+        return False
 
 
 def compare_and_alert(asin_info, old, new):
@@ -299,9 +303,16 @@ def compare_and_alert(asin_info, old, new):
 
 def main():
     init_mode = "--init" in sys.argv
+    test_email_mode = "--test-email" in sys.argv or os.environ.get("TEST_EMAIL") == "1"
     config = load_config()
     os.makedirs(DATA_DIR, exist_ok=True)
-    log(f"===== 监控开始 ({'初始化基线' if init_mode else '常规监控'}) =====")
+    log(f"===== 监控开始 ({'初始化基线' if init_mode else '常规监控'}{' + 测试邮件' if test_email_mode else ''}) =====")
+
+    # 仅测试邮件：不抓取，直接发一封测试邮件
+    if test_email_mode and "--init" not in sys.argv and os.environ.get("TEST_EMAIL_ONLY") == "1":
+        ok = send_email([{"type": "测试", "detail": "仅测试邮件模式，未执行抓取。"}], config)
+        log(f"测试邮件{'发送成功' if ok else '发送失败'}")
+        return
 
     history = load_history()
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -351,6 +362,9 @@ def main():
         send_email(all_alerts, config)
     else:
         log("===== 本轮无异常 =====")
+        if test_email_mode:
+            log("  测试模式：发送测试邮件验证链路")
+            send_email([{"type": "测试", "detail": "这是一封测试邮件，用于验证邮件预警链路是否正常。收到即代表配置成功。"}], config)
     log("===== 监控结束 =====\n")
 
 

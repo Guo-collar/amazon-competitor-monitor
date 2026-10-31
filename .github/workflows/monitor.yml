@@ -5,6 +5,12 @@ on:
     # 每 6 小时运行一次（UTC 时间）
     - cron: "0 */6 * * *"
   workflow_dispatch: # 允许手动触发
+    inputs:
+      test_email:
+        description: "只发测试邮件（不抓取，仅验证邮件配置）"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write # 允许提交历史快照回仓库
@@ -28,7 +34,15 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           ALERT_TO: ${{ secrets.ALERT_TO }}
-        run: python monitor.py
+          TEST_EMAIL_ONLY: ${{ inputs.test_email == true && '1' || '0' }}
+        run: |
+          if [ "$TEST_EMAIL_ONLY" = "1" ]; then
+            echo "=== 仅测试邮件模式 ==="
+            TEST_EMAIL=1 TEST_EMAIL_ONLY=1 python monitor.py
+          else
+            echo "=== 常规监控模式 ==="
+            python monitor.py
+          fi
 
       - name: 提交历史快照
         run: |
