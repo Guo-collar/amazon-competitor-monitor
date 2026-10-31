@@ -567,13 +567,15 @@ def compare_and_alert(asin_info, old, new):
 
     old_discount = old.get("discount") if old else None
     new_discount = new.get("discount")
-    if new_discount is not None and old_discount != new_discount:
+    # 折扣是派生值，只有新旧的划线原价都可信时才比较，否则容易因解析漂移误报
+    price_ok = new.get("list_price") is not None and (old.get("list_price") is not None if old else True)
+    if price_ok and new_discount is not None and old_discount != new_discount:
         if old_discount is None:
             alerts.append({"type": "促销上线", "detail": f"{name}({asin}) 新增折扣: {new_discount}% off (现价 ${new.get('price')}, 原价 ${new.get('list_price')})"})
         else:
             direction = "加大" if new_discount > old_discount else "减小"
             alerts.append({"type": "折扣变化", "detail": f"{name}({asin}) 折扣{direction}: {old_discount}% → {new_discount}% off"})
-    elif new_discount is None and old_discount is not None:
+    elif price_ok and new_discount is None and old_discount is not None:
         alerts.append({"type": "促销结束", "detail": f"{name}({asin}) 折扣已取消 (原 {old_discount}% off)"})
 
     return alerts
