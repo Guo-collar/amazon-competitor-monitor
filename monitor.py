@@ -49,9 +49,16 @@ HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
 ALERTS_PATH = os.path.join(DATA_DIR, "alerts.jsonl")
 LOG_PATH = os.path.join(DATA_DIR, "monitor.log")
 
+# 统一使用北京时间（GitHub Actions runner 默认是 UTC，会造成 8 小时时差）
+TZ_BEIJING = datetime.timezone(datetime.timedelta(hours=8))
+
+
+def bjnow(fmt="%Y-%m-%d %H:%M:%S"):
+    return datetime.datetime.now(TZ_BEIJING).strftime(fmt)
+
 
 def log(msg):
-    line = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
+    line = f"[{bjnow()}] {msg}"
     print(line)
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -283,7 +290,7 @@ def send_feishu(alerts):
             if i < len(alerts) - 1:
                 elements.append({"tag": "hr"})
 
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        now_str = bjnow("%Y-%m-%d %H:%M")
         elements.append({
             "tag": "note",
             "elements": [{"tag": "plain_text", "content": f"监控时间 {now_str} · 亚马逊竞品监控"}],
@@ -542,7 +549,7 @@ def main():
         return
 
     history = load_history()
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = bjnow()
     all_alerts = []
 
     for asin_info in config["asins"]:
