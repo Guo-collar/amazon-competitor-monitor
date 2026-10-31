@@ -2,14 +2,14 @@ name: 亚马逊竞品监控
 
 on:
   schedule:
-    # 每 30 分钟唤醒一次做"探测"，由脚本内部的 6 小时门控决定是否真正抓取。
+    # 每 15 分钟唤醒一次做"探测"，由脚本内部的 4 小时门控决定是否真正抓取。
     # 原因：GitHub 的 cron 不保证准时——整点排队常延迟 5~30 分钟，高负载时整轮可能被丢弃。
-    # 直接写 0 */6 * * * 会导致推送时有时无，无法做到"每 6 小时必达"。
+    # 直接写定时 cron 会导致推送时有时无，无法做到"每 4 小时必达"。
     - cron: "*/15 * * * *"
-  workflow_dispatch: # 手动触发。默认同样受 6 小时门控约束，需要立刻跑请勾选 force
+  workflow_dispatch: # 手动触发。默认同样受 4 小时门控约束，需要立刻跑请勾选 force
     inputs:
       force:
-        description: "强制执行一次（忽略 6 小时门控）"
+        description: "强制执行一次（忽略 4 小时门控）"
         required: false
         type: boolean
         default: false
@@ -51,10 +51,10 @@ jobs:
             echo "=== 仅测试通知模式 ==="
             TEST_EMAIL=1 TEST_EMAIL_ONLY=1 python monitor.py
           elif [ "${{ inputs.force }}" = "true" ]; then
-            echo "=== 强制执行：忽略 6 小时门控 ==="
+            echo "=== 强制执行：忽略 4 小时门控 ==="
             python monitor.py
           else
-            echo "=== 常规模式：受 6 小时门控约束 ==="
+            echo "=== 常规模式：受 4 小时门控约束 ==="
             echo "（schedule 与 Cloudflare 定时器的 workflow_dispatch 都走这里）"
             SCHEDULED_MODE=1 python monitor.py
           fi

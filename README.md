@@ -56,7 +56,7 @@ git push -u origin main
 
 ### 3. 启用定时任务
 
-推送代码后，GitHub Actions 的定时任务（`.github/workflows/monitor.yml` 里的 `cron: 0 */6 * * *`）会自动生效，每 6 小时运行一次。
+定时由 Cloudflare Worker 外部闹钟驱动（GitHub 自带的 cron 对部分仓库不调度，详见 `cron-trigger/README.md`），每 4 小时运行一次并推送巡检报告。
 
 也可以在仓库 `Actions` 页手动点「Run workflow」立即测试一次。
 
@@ -75,10 +75,10 @@ git push -u origin main
 ## 常见问题
 
 **Q: 为什么用 GitHub Actions 免费额度够吗？**
-A: 私有仓库每月 2000 分钟，本项目每 6 小时跑 1 次、每次约 1 分钟，每月约 120 分钟，完全够用。
+A: 私有仓库每月 2000 分钟，本项目每 4 小时真跑 1 次、每次约 1 分钟，每月约 180 分钟，完全够用。
 
 **Q: 亚马逊会不会封 IP？**
-A: 每 6 小时才抓 2 个页面，频率极低，风险很小。如需更频繁可自行调 cron。
+A: 每 4 小时才抓 2 个页面，频率极低，风险很小。如需调整间隔，改 `monitor.py` 顶部 `SCHEDULE_INTERVAL_HOURS` 与 `SCHEDULE_GATE_HOURS`（后者固定为前者减 0.2）。
 
 **Q: 想加新竞品？**
 A: 编辑 `config.json` 的 `asins` 数组，添加 `{"asin": "xxx", "name": "竞品C"}` 即可。

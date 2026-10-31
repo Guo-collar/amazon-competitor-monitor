@@ -52,9 +52,9 @@ LOG_PATH = os.path.join(DATA_DIR, "monitor.log")
 
 # 定时门控参数
 # GitHub Actions 的 schedule 触发不可靠：整点排队延迟 5~30 分钟，高负载时直接丢弃。
-# 因此 workflow 改为每 30 分钟探测一次，由脚本内部判断是否已到 6 小时周期。
-SCHEDULE_INTERVAL_HOURS = 6
-SCHEDULE_GATE_HOURS = 5.8  # 略小于 6，保证每个周期恰好执行一次而不会漏过
+# 因此由外部定时器（Cloudflare Worker）每 30 分钟唤醒一次，脚本内部判断是否已到周期。
+SCHEDULE_INTERVAL_HOURS = 4
+SCHEDULE_GATE_HOURS = 3.8  # 略小于周期，保证每个周期恰好执行一次而不会漏过
 
 # 统一使用北京时间（GitHub Actions runner 默认是 UTC，会造成 8 小时时差）
 TZ_BEIJING = datetime.timezone(datetime.timedelta(hours=8))
@@ -79,7 +79,7 @@ def schedule_gate(hours=SCHEDULE_GATE_HOURS):
     """定时门控：判断本轮是否已到抓取周期。
 
     GitHub Actions 的 cron 不保证准时（整点排队常延迟 5~30 分钟，高负载时可能整轮被丢弃），
-    所以 workflow 每 30 分钟唤醒一次，用本函数保证真正的抓取仍是 6 小时一次。
+    所以外部定时器每 30 分钟唤醒一次，用本函数保证真正的抓取仍按 SCHEDULE_INTERVAL_HOURS 的周期执行。
     返回 (should_run, reason)。
     """
     last_ts = None
@@ -438,7 +438,7 @@ def send_feishu(alerts, snapshot=None):
         })
         elements.append({
             "tag": "note",
-            "elements": [{"tag": "plain_text", "content": f"巡检时间 {now_str} · 每6小时自动巡检 · 亚马逊竞品监控"}],
+            "elements": [{"tag": "plain_text", "content": f"巡检时间 {now_str} · 每{SCHEDULE_INTERVAL_HOURS}小时自动巡检 · 亚马逊竞品监控"}],
         })
 
         payload = {
@@ -694,7 +694,7 @@ def main():
     test_email_mode = "--test-email" in sys.argv or os.environ.get("TEST_EMAIL") == "1"
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # 定时门控：workflow 每 30 分钟唤醒，只有到达 6 小时周期才真正抓取
+    # 定时门控：外部定时器每 30 分钟唤醒，只有到达设定周期才真正抓取
     if scheduled_mode:
         should_run, reason = schedule_gate()
         if not should_run:
