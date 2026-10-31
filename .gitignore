@@ -1,6 +1,7 @@
 # 数据目录（history.json 需提交以持久化历史快照）
 data/*
 !data/history.json
+!data/last_run.json
 !data/.gitkeep
 
 # WorkBuddy 本地数据（不上传）

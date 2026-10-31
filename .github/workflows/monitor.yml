@@ -2,9 +2,11 @@ name: 亚马逊竞品监控
 
 on:
   schedule:
-    # 每 6 小时运行一次（UTC 时间）
-    - cron: "0 */6 * * *"
-  workflow_dispatch: # 允许手动触发
+    # 每 30 分钟唤醒一次做"探测"，由脚本内部的 6 小时门控决定是否真正抓取。
+    # 原因：GitHub 的 cron 不保证准时——整点排队常延迟 5~30 分钟，高负载时整轮可能被丢弃。
+    # 直接写 0 */6 * * * 会导致推送时有时无，无法做到"每 6 小时必达"。
+    - cron: "*/30 * * * *"
+  workflow_dispatch: # 允许手动触发（手动触发不受 6 小时门控限制）
     inputs:
       test_email:
         description: "只发测试通知（不抓取，仅验证推送配置）"
@@ -40,16 +42,19 @@ jobs:
           ALERT_TO: ${{ secrets.ALERT_TO }}
           TEST_EMAIL_ONLY: ${{ inputs.test_email == true && '1' || '0' }}
         run: |
-          if [ "$TEST_EMAIL_ONLY" = "1" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "=== 定时触发：30 分钟探测 + 6 小时门控 ==="
+            SCHEDULED_MODE=1 python monitor.py
+          elif [ "$TEST_EMAIL_ONLY" = "1" ]; then
             echo "=== 仅测试通知模式 ==="
             TEST_EMAIL=1 TEST_EMAIL_ONLY=1 python monitor.py
           else
-            echo "=== 常规监控模式 ==="
+            echo "=== 手动触发：常规监控 ==="
             python monitor.py
           fi
 
       - name: 推送配置诊断
-        if: always()
+        if: always() && hashFiles('data/.ran') != ''
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
@@ -67,11 +72,12 @@ jobs:
           cat data/diag.txt
 
       - name: 提交历史快照
-        if: always()
+        if: always() && hashFiles('data/.ran') != ''
         run: |
           git config user.name "monitor-bot"
           git config user.email "monitor-bot@users.noreply.github.com"
           git add data/history.json 2>/dev/null || true
+          git add data/last_run.json 2>/dev/null || true
           git add -f data/diag.txt data/monitor.log 2>/dev/null || true
           git commit -m "chore: 更新监控历史快照 $(date -u +'%Y-%m-%d %H:%M:%S UTC')" 2>/dev/null || echo "无变更"
           git push 2>/dev/null || echo "推送失败（可能无变更或无权限）"

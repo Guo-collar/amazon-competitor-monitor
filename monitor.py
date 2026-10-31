@@ -46,8 +46,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
+LAST_RUN_PATH = os.path.join(DATA_DIR, "last_run.json")
 ALERTS_PATH = os.path.join(DATA_DIR, "alerts.jsonl")
 LOG_PATH = os.path.join(DATA_DIR, "monitor.log")
+
+# 定时门控参数
+# GitHub Actions 的 schedule 触发不可靠：整点排队延迟 5~30 分钟，高负载时直接丢弃。
+# 因此 workflow 改为每 30 分钟探测一次，由脚本内部判断是否已到 6 小时周期。
+SCHEDULE_INTERVAL_HOURS = 6
+SCHEDULE_GATE_HOURS = 5.8  # 略小于 6，保证每个周期恰好执行一次而不会漏过
 
 # 统一使用北京时间（GitHub Actions runner 默认是 UTC，会造成 8 小时时差）
 TZ_BEIJING = datetime.timezone(datetime.timedelta(hours=8))
@@ -66,6 +73,45 @@ def log(msg):
             f.write(line + "\n")
     except Exception:
         pass
+
+
+def schedule_gate(hours=SCHEDULE_GATE_HOURS):
+    """定时门控：判断本轮是否已到抓取周期。
+
+    GitHub Actions 的 cron 不保证准时（整点排队常延迟 5~30 分钟，高负载时可能整轮被丢弃），
+    所以 workflow 每 30 分钟唤醒一次，用本函数保证真正的抓取仍是 6 小时一次。
+    返回 (should_run, reason)。
+    """
+    last_ts = None
+    if os.path.exists(LAST_RUN_PATH):
+        try:
+            with open(LAST_RUN_PATH, "r", encoding="utf-8") as f:
+                last_ts = json.load(f).get("last_run_ts")
+        except Exception as e:
+            log(f"  读取运行记录失败: {e}")
+    if not last_ts:
+        return True, "首次运行（无历史记录）"
+    try:
+        elapsed_h = (time.time() - float(last_ts)) / 3600
+    except (TypeError, ValueError):
+        return True, "运行记录时间戳异常，强制执行"
+    if elapsed_h >= hours:
+        return True, f"距上次运行 {elapsed_h:.2f} 小时，已达 {hours} 小时周期"
+    return False, f"距上次运行仅 {elapsed_h:.2f} 小时（周期 {hours} 小时），跳过本轮"
+
+
+def mark_run():
+    """记录本轮实际执行时间，供下一轮门控判断。抓取失败也要记，否则会每 30 分钟重试刷屏。"""
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(LAST_RUN_PATH, "w", encoding="utf-8") as f:
+            json.dump({
+                "last_run_ts": time.time(),
+                "last_run_bj": bjnow(),
+                "interval_hours": SCHEDULE_INTERVAL_HOURS,
+            }, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log(f"  写入运行记录失败: {e}")
 
 
 def load_config():
@@ -644,9 +690,26 @@ def compare_and_alert(asin_info, old, new):
 
 def main():
     init_mode = "--init" in sys.argv
+    scheduled_mode = "--scheduled" in sys.argv or os.environ.get("SCHEDULED_MODE") == "1"
     test_email_mode = "--test-email" in sys.argv or os.environ.get("TEST_EMAIL") == "1"
-    config = load_config()
     os.makedirs(DATA_DIR, exist_ok=True)
+
+    # 定时门控：workflow 每 30 分钟唤醒，只有到达 6 小时周期才真正抓取
+    if scheduled_mode:
+        should_run, reason = schedule_gate()
+        if not should_run:
+            log(f"⏭ 定时门控：{reason}")
+            return
+        log(f"✅ 定时门控：{reason}")
+
+    # 标记"本轮真的执行了"，供 workflow 判断是否提交快照与诊断（跳过的轮次不提交，避免刷屏 commit）
+    try:
+        with open(os.path.join(DATA_DIR, ".ran"), "w", encoding="utf-8") as f:
+            f.write(bjnow())
+    except Exception:
+        pass
+
+    config = load_config()
     log(f"===== 监控开始 ({'初始化基线' if init_mode else '常规监控'}{' + 测试邮件' if test_email_mode else ''}) =====")
 
     # 仅测试推送：不抓取，直接发一条测试通知
@@ -743,6 +806,7 @@ def main():
             log("  推送常规巡检报告（本轮无异常）")
             send_notification([], config, snapshot)
     log("===== 监控结束 =====\n")
+    mark_run()
 
 
 if __name__ == "__main__":
