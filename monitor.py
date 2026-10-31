@@ -194,18 +194,25 @@ def append_alert(alert):
 
 def send_email(alerts, config):
     """通过 SMTP 发送预警邮件。未配置则跳过。"""
-    smtp_host = os.environ.get("SMTP_HOST", "")
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_pass = os.environ.get("SMTP_PASS", "")
-    alert_to = os.environ.get("ALERT_TO", "")
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_pass = os.environ.get("SMTP_PASS", "").strip()
+    alert_to = os.environ.get("ALERT_TO", "").strip()
+    smtp_port_str = os.environ.get("SMTP_PORT", "465").strip()
+
+    log("  --- SMTP 配置检查 ---")
+    log(f"    SMTP_HOST = {smtp_host if smtp_host else '(空)'}")
+    log(f"    SMTP_PORT = {smtp_port_str if smtp_port_str else '(空)'}")
+    log(f"    SMTP_USER = {smtp_user if smtp_user else '(空)'}")
+    log(f"    SMTP_PASS = {'已设置(长度%d)' % len(smtp_pass) if smtp_pass else '(空)'}")
+    log(f"    ALERT_TO  = {alert_to if alert_to else '(空)'}")
 
     if not (smtp_host and smtp_user and smtp_pass and alert_to):
-        log("  邮件未发送：缺少 SMTP 配置")
-        log(f"    检查 SMTP_HOST={'已设置' if smtp_host else '缺失'} / SMTP_USER={'已设置' if smtp_user else '缺失'} / SMTP_PASS={'已设置' if smtp_pass else '缺失'} / ALERT_TO={'已设置' if alert_to else '缺失'}")
+        log("  ✗ 邮件未发送：上述配置存在缺失，请检查 GitHub Secrets")
         return False
 
     try:
-        smtp_port = int(os.environ.get("SMTP_PORT", "465"))
+        smtp_port = int(smtp_port_str or "465")
         lines = ["亚马逊竞品监控预警", ""]
         for a in alerts:
             lines.append(f"[{a['type']}] {a['detail']}")
@@ -215,19 +222,28 @@ def send_email(alerts, config):
         msg["From"] = smtp_user
         msg["To"] = alert_to
 
+        log(f"  连接服务器 {smtp_host}:{smtp_port} ...")
         use_ssl = smtp_port == 465
         if use_ssl:
             server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
         else:
             server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
             server.starttls()
+        log("  连接成功，正在登录 ...")
         server.login(smtp_user, smtp_pass)
+        log("  登录成功，正在发送 ...")
         server.sendmail(smtp_user, [alert_to], msg.as_string())
         server.quit()
-        log(f"  预警邮件已发送至 {alert_to}")
+        log(f"  ✓ 预警邮件已发送至 {alert_to}")
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        log(f"  ✗ 登录认证失败（授权码可能错误或已失效）: {e}")
+        return False
+    except smtplib.SMTPException as e:
+        log(f"  ✗ SMTP 协议错误: {type(e).__name__}: {e}")
+        return False
     except Exception as e:
-        log(f"  邮件发送失败: {type(e).__name__}: {e}")
+        log(f"  ✗ 邮件发送失败: {type(e).__name__}: {e}")
         return False
 
 
