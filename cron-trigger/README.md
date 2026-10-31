@@ -71,19 +71,26 @@ GitHub 上跑，已跑通的逻辑一行都不用改。
 
 ## 第三步：配置环境变量
 
-在 Worker 页面 → **Settings** → **Variables and Secrets** → **Add**，逐个添加（类型选 **Secret**）：
+**只需要配 1 个变量。** 仓库名、工作流 ID、分支已经写死在 `worker.js` 的 `CONFIG` 里了
+（这些都不是敏感信息），不用再单独配。
 
-| 变量名 | 值 |
-|---|---|
-| `GITHUB_TOKEN` | 第一步复制的 `github_pat_...` |
-| `REPO` | `Guo-collar/amazon-competitor-monitor` |
-| `WORKFLOW_ID` | `402402553` |
-| `BRANCH` | `main` |
+在 Worker 页面 → **Settings** → **Variables and Secrets** → **Add**：
+
+| 变量名 | 值 | 类型 |
+|---|---|---|
+| `GITHUB_TOKEN` | 第一步复制的完整 `github_pat_...`（约 93 字符） | **Secret / 机密** |
+
+Environment 勾选 **Production**，然后点 **Deploy** 让它生效。
+
+> 判断 Token 对不对，看两点：开头必须是 `github_pat_`，长度约 93 个字符。
+> 如果只有 40 来个字符，说明复制不完整，会返回 401。
 
 加完点 **Deploy** 让变量生效。
 
 > 如果用的是新版 Dashboard，可能叫 **Settings → Variables**，或分成
 > "Environment Variables" 和 "Secrets" 两块，Secret 的加在 Secrets 里即可。
+
+想要换仓库时，不必改代码，加同名环境变量 `REPO` / `WORKFLOW_ID` / `BRANCH` 覆盖即可。
 
 ---
 
@@ -101,7 +108,16 @@ Worker 页面 → **Settings** → **Triggers**（旧版可能叫 **Triggers →
 
 ## 第五步：验证
 
-**方法一（最快）**：直接用浏览器打开你的 Worker 地址
+**先做配置自检（不会触发 GitHub）**：浏览器打开
+
+```
+https://<你的worker名>.<你的子域>.workers.dev/?check=1
+```
+
+看 `Token已配置` 是否为 `true`、`Token长度` 是否在 90 以上、`Token开头` 是否为 `github_pat_`。
+不对就先修 Token，再往下走。
+
+**再测真实触发**：浏览器打开 Worker 地址
 （形如 `https://<worker名>.<你的子域>.workers.dev`）
 
 - 返回 `{"ok": true, "status": 204, "message": "已触发 GitHub 工作流"}`
