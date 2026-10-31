@@ -294,8 +294,36 @@ ALERT_EMOJI = {
 }
 
 
-def send_feishu(alerts):
-    """飞书自定义机器人推送（卡片消息）。支持签名校验。未配置返回 None。"""
+def _fmt_snapshot(snapshot):
+    """把本轮抓取数据格式化为卡片文本行"""
+    lines = []
+    for d in snapshot or []:
+        price = f"${d['price']}" if d.get("price") is not None else "—"
+        disc = f" ({d['discount']}% off)" if d.get("discount") else ""
+        stock = d.get("stock") or "—"
+        if "Out of Stock" in stock:
+            stock_txt = "🚨售罄"
+        elif "In Stock" in stock:
+            stock_txt = "✅有货"
+        else:
+            stock_txt = stock
+        sub = (d.get("sub_bsr") or {}).get("rank")
+        sub_txt = f"#{sub}" if sub else "—"
+        big = (d.get("bsr") or {}).get("rank")
+        big_txt = f"#{big:,}" if big else "—"
+        rating = f"{d['rating']}★" if d.get("rating") is not None else "—"
+        reviews = f"{d['reviews']:,}" if d.get("reviews") is not None else "—"
+        lines.append(
+            f"**{d.get('name', '')}** ({d.get('asin', '')})\n"
+            f"{price}{disc} · {stock_txt} · 小类 {sub_txt} / 大类 {big_txt} · {rating} · {reviews} 评"
+        )
+    return lines
+
+
+def send_feishu(alerts, snapshot=None):
+    """飞书自定义机器人推送（卡片消息）。支持签名校验。未配置返回 None。
+    alerts 为空时也推送（巡检正常报告），snapshot 为本轮抓取的数据快照。
+    """
     url = (os.environ.get("FEISHU_WEBHOOK", "") or "").strip()
     if not url:
         return None
@@ -303,24 +331,51 @@ def send_feishu(alerts):
     secret = (os.environ.get("FEISHU_SECRET", "") or "").strip()
 
     try:
-        title = f"亚马逊竞品预警 {len(alerts)} 条"
-        # 有任何售罄/回货用红色，其余用橙色
-        serious = any("售罄" in a.get("type", "") or "回货" in a.get("type", "") for a in alerts)
-        template = "red" if serious else "orange"
+        is_test = bool(alerts) and all(a.get("type") == "测试" for a in alerts)
+        if is_test:
+            title = "🧪 测试通知"
+            template = "blue"
+        elif alerts:
+            title = f"⚠️ 竞品预警 {len(alerts)} 条"
+            serious = any(
+                k in a.get("type", "") for a in alerts
+                for k in ("售罄", "回货", "抓取异常")
+            )
+            template = "red" if serious else "orange"
+        else:
+            title = "✅ 竞品巡检正常"
+            template = "green"
 
         elements = []
-        for i, a in enumerate(alerts):
-            etype = a.get("type", "预警")
-            emoji = ALERT_EMOJI.get(etype, "🔔")
+        # 1) 异常明细放最前（用户要求：有变化要重点提醒）
+        if alerts:
+            for i, a in enumerate(alerts):
+                etype = a.get("type", "预警")
+                emoji = ALERT_EMOJI.get(etype, "🔔")
+                elements.append({
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": f"{emoji} **{etype}**\n{a.get('detail', '')}",
+                    },
+                })
+                if i < len(alerts) - 1:
+                    elements.append({"tag": "hr"})
+
+        # 2) 本轮数据快照
+        snap_lines = _fmt_snapshot(snapshot)
+        if snap_lines:
+            if alerts:
+                elements.append({"tag": "hr"})
             elements.append({
                 "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": f"{emoji} **{etype}**\n{a.get('detail', '')}",
-                },
+                "text": {"tag": "lark_md", "content": "📊 **本轮数据**"},
             })
-            if i < len(alerts) - 1:
-                elements.append({"tag": "hr"})
+            for line in snap_lines:
+                elements.append({
+                    "tag": "div",
+                    "text": {"tag": "lark_md", "content": line},
+                })
 
         now_str = bjnow("%Y-%m-%d %H:%M")
         elements.append({"tag": "hr"})
@@ -337,7 +392,7 @@ def send_feishu(alerts):
         })
         elements.append({
             "tag": "note",
-            "elements": [{"tag": "plain_text", "content": f"监控时间 {now_str} · 亚马逊竞品监控"}],
+            "elements": [{"tag": "plain_text", "content": f"巡检时间 {now_str} · 每6小时自动巡检 · 亚马逊竞品监控"}],
         })
 
         payload = {
@@ -419,8 +474,10 @@ def send_webhook(alerts):
         return False
 
 
-def send_notification(alerts, config):
-    """统一推送入口：飞书 → Server酱 → 通用Webhook → 邮件，按优先级尝试"""
+def send_notification(alerts, config, snapshot=None):
+    """统一推送入口：飞书 → Server酱 → 通用Webhook → 邮件，按优先级尝试。
+    alerts 为空表示本轮无异常（巡检正常报告也需要推送）。
+    """
     log("  --- 推送配置检查 ---")
     has_feishu = bool((os.environ.get("FEISHU_WEBHOOK", "") or "").strip())
     has_serverchan = bool(os.environ.get("SERVERCHAN_KEY", "").strip())
@@ -432,23 +489,26 @@ def send_notification(alerts, config):
     log(f"    WEBHOOK_URL    = {'已设置' if has_webhook else '(空)'}")
     log(f"    邮件 SMTP      = {'已设置' if has_smtp else '(空)'}")
 
+    # 非飞书渠道不支持快照卡片，无异常时补一条占位说明
+    plain_alerts = alerts or [{"type": "巡检正常", "detail": "本轮所有竞品指标无异常变化"}]
+
     if has_feishu:
-        r = send_feishu(alerts)
+        r = send_feishu(alerts, snapshot)
         if r:
             return True
         log("  飞书推送失败，尝试其他方式...")
     if has_serverchan:
-        r = send_serverchan(alerts)
+        r = send_serverchan(plain_alerts)
         if r:
             return True
         log("  Server酱 失败，尝试其他方式...")
     if has_webhook:
-        r = send_webhook(alerts)
+        r = send_webhook(plain_alerts)
         if r:
             return True
         log("  Webhook 失败，尝试其他方式...")
     if has_smtp:
-        return send_email(alerts, config)
+        return send_email(plain_alerts, config)
 
     log("  ✗ 未配置任何推送方式（FEISHU_WEBHOOK / SERVERCHAN_KEY / WEBHOOK_URL / SMTP）")
     return False
@@ -599,6 +659,7 @@ def main():
     now = bjnow()
     all_alerts = []
     failed_asins = []
+    snapshot = []
 
     for asin_info in config["asins"]:
         asin = asin_info["asin"]
@@ -647,6 +708,7 @@ def main():
                     log(f"  ⚠ 预警: [{a['type']}] {a['detail']}")
 
             history[asin] = new_data
+            snapshot.append(new_data)
             time.sleep(config["request"].get("delay_between_asins", 5))
         except Exception as e:
             failed_asins.append(f"{name}({asin})")
@@ -668,12 +730,18 @@ def main():
         for a in all_alerts:
             append_alert({"time": now, **a})
         log(f"===== 本轮共 {len(all_alerts)} 条预警 =====")
-        send_notification(all_alerts, config)
+        send_notification(all_alerts, config, snapshot)
     else:
         log("===== 本轮无异常 =====")
-        if test_email_mode:
+        if init_mode:
+            log("  初始化基线模式，不推送巡检报告")
+        elif test_email_mode:
             log("  测试模式：发送测试通知验证推送链路")
-            send_notification([{"type": "测试", "detail": "这是一条测试通知，用于验证预警推送链路是否正常。收到即代表配置成功。"}], config)
+            send_notification([{"type": "测试", "detail": "这是一条测试通知，用于验证预警推送链路是否正常。收到即代表配置成功。"}], config, snapshot)
+        else:
+            # 用户要求：无论有无变化，每轮都推巡检报告
+            log("  推送常规巡检报告（本轮无异常）")
+            send_notification([], config, snapshot)
     log("===== 监控结束 =====\n")
 
 
