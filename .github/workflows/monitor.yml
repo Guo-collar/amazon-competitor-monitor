@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # 允许手动触发
     inputs:
       test_email:
-        description: "只发测试邮件（不抓取，仅验证邮件配置）"
+        description: "只发测试通知（不抓取，仅验证推送配置）"
         required: false
         type: boolean
         default: false
@@ -29,6 +29,8 @@ jobs:
 
       - name: 运行监控脚本
         env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}

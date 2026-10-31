@@ -8,13 +8,16 @@
   python monitor.py            # 常规监控：抓取+对比+预警
   python monitor.py --init     # 首次运行：仅建立基线不预警
 
-推送方式（可选，按优先级）：
-  1. Server酱（微信推送，推荐用于云端）：SERVERCHAN_KEY
-  2. 企业微信/飞书/钉钉 群机器人：WEBHOOK_URL
-  3. 邮件 SMTP：SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / ALERT_TO
-  三者都未配置时仅写日志和 alerts.jsonl。
+推送方式（可选，按优先级尝试）：
+  1. 飞书自定义机器人（推荐，卡片消息）：FEISHU_WEBHOOK（+ 可选 FEISHU_SECRET 签名校验）
+  2. Server酱（微信推送）：SERVERCHAN_KEY
+  3. 企业微信/钉钉 群机器人：WEBHOOK_URL
+  4. 邮件 SMTP：SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / ALERT_TO
+  都未配置时仅写日志和 alerts.jsonl。
 
-注意：QQ 邮箱 SMTP 无法从 GitHub Actions（美国节点）访问，云端请用 Server酱 或 Webhook。
+注意：QQ 邮箱 SMTP 无法从 GitHub Actions（美国节点）访问，云端请用飞书机器人 / Server酱。
+飞书群机器人创建：飞书群 → 设置 → 群机器人 → 添加机器人 → 自定义机器人 → 复制 Webhook 地址
+（安全设置里勾选「签名校验」时，把密钥填到 FEISHU_SECRET；勾选「自定义关键词」时填「亚马逊」）
 
 数据持久化（云端）：
   本脚本支持两种持久化方式：
@@ -27,6 +30,9 @@ import os
 import re
 import sys
 import time
+import base64
+import hashlib
+import hmac
 import datetime
 import subprocess
 import tempfile
@@ -226,8 +232,108 @@ def send_serverchan(alerts):
         return False
 
 
+def _feishu_sign(secret, timestamp):
+    """飞书自定义机器人签名校验：HMAC-SHA256(key=timestamp\\n secret, msg='')"""
+    string_to_sign = f"{timestamp}\n{secret}"
+    digest = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("utf-8")
+
+
+ALERT_EMOJI = {
+    "价格变化": "💰",
+    "促销上线": "🏷️",
+    "折扣变化": "🏷️",
+    "促销结束": "🏁",
+    "库存变化": "📦",
+    "售罄": "🚨",
+    "回货": "✅",
+    "BSR排名变化": "📊",
+    "小类BSR变化": "📈",
+    "评分变化": "⭐",
+    "评论激增": "💬",
+    "测试": "🧪",
+}
+
+
+def send_feishu(alerts):
+    """飞书自定义机器人推送（卡片消息）。支持签名校验。未配置返回 None。"""
+    url = (os.environ.get("FEISHU_WEBHOOK", "") or "").strip()
+    if not url:
+        return None
+
+    secret = (os.environ.get("FEISHU_SECRET", "") or "").strip()
+
+    try:
+        title = f"亚马逊竞品预警 {len(alerts)} 条"
+        # 有任何售罄/回货用红色，其余用橙色
+        serious = any("售罄" in a.get("type", "") or "回货" in a.get("type", "") for a in alerts)
+        template = "red" if serious else "orange"
+
+        elements = []
+        for i, a in enumerate(alerts):
+            etype = a.get("type", "预警")
+            emoji = ALERT_EMOJI.get(etype, "🔔")
+            elements.append({
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"{emoji} **{etype}**\n{a.get('detail', '')}",
+                },
+            })
+            if i < len(alerts) - 1:
+                elements.append({"tag": "hr"})
+
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        elements.append({
+            "tag": "note",
+            "elements": [{"tag": "plain_text", "content": f"监控时间 {now_str} · 亚马逊竞品监控"}],
+        })
+
+        payload = {
+            "msg_type": "interactive",
+            "card": {
+                "config": {"wide_screen_mode": True},
+                "header": {
+                    "title": {"tag": "plain_text", "content": title},
+                    "template": template,
+                },
+                "elements": elements,
+            },
+        }
+
+        # 可选签名校验
+        post_url = url
+        if secret:
+            ts = str(int(time.time()))
+            sign = _feishu_sign(secret, ts)
+            sep = "&" if "?" in url else "?"
+            post_url = f"{url}{sep}timestamp={ts}&sign={urllib.parse.quote(sign)}"
+
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(post_url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json; charset=utf-8")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+        log(f"  飞书响应: {body[:300]}")
+
+        # 严格判断返回码（飞书报错时也是非空 JSON，不能只看非空）
+        try:
+            rj = json.loads(body)
+        except Exception:
+            rj = {}
+        code = rj.get("code", rj.get("StatusCode"))
+        if code == 0:
+            log("  ✓ 飞书推送成功")
+            return True
+        log(f"  ✗ 飞书推送失败（code={code}, msg={rj.get('msg') or rj.get('StatusMessage')}）")
+        return False
+    except Exception as e:
+        log(f"  ✗ 飞书推送异常: {type(e).__name__}: {e}")
+        return False
+
+
 def send_webhook(alerts):
-    """通过群机器人 Webhook 推送（企业微信/飞书/钉钉通用 markdown 格式）"""
+    """通用群机器人 Webhook（企业微信/钉钉/其他）。未配置返回 None。"""
     url = os.environ.get("WEBHOOK_URL", "").strip()
     if not url:
         return None
@@ -237,10 +343,7 @@ def send_webhook(alerts):
         for a in alerts:
             lines.append(f"**[{a['type']}]** {a['detail']}")
         content = "\n".join(lines)
-        # 兼容企业微信/钉钉(markdown)与飞书(text)
-        if "feishu" in url or "larksuite" in url:
-            payload = {"msg_type": "text", "content": {"text": title + "\n" + "\n".join(f"[{a['type']}] {a['detail']}" for a in alerts)}}
-        elif "dingtalk" in url:
+        if "dingtalk" in url:
             payload = {"msgtype": "markdown", "markdown": {"title": title, "text": content}}
         else:
             payload = {"msgtype": "markdown", "markdown": {"content": content}}
@@ -250,10 +353,15 @@ def send_webhook(alerts):
         with urllib.request.urlopen(req, timeout=30) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
         log(f"  Webhook 响应: {body[:200]}")
-        if '"errcode":0' in body or '"code":0' in body or 'StatusCode":0' in body or body.strip():
+        try:
+            rj = json.loads(body)
+        except Exception:
+            rj = {}
+        code = rj.get("errcode", rj.get("code", rj.get("StatusCode")))
+        if code == 0:
             log("  ✓ 群机器人推送成功")
             return True
-        log("  ✗ 群机器人推送失败")
+        log(f"  ✗ 群机器人推送失败（code={code}）")
         return False
     except Exception as e:
         log(f"  ✗ Webhook 推送异常: {type(e).__name__}: {e}")
@@ -261,15 +369,23 @@ def send_webhook(alerts):
 
 
 def send_notification(alerts, config):
-    """统一推送入口：Server酱 → Webhook → 邮件，按优先级尝试"""
+    """统一推送入口：飞书 → Server酱 → 通用Webhook → 邮件，按优先级尝试"""
     log("  --- 推送配置检查 ---")
+    has_feishu = bool((os.environ.get("FEISHU_WEBHOOK", "") or "").strip())
     has_serverchan = bool(os.environ.get("SERVERCHAN_KEY", "").strip())
     has_webhook = bool(os.environ.get("WEBHOOK_URL", "").strip())
     has_smtp = bool(os.environ.get("SMTP_HOST", "").strip() and os.environ.get("SMTP_USER", "").strip())
+    log(f"    FEISHU_WEBHOOK = {'已设置' if has_feishu else '(空)'}")
+    log(f"    FEISHU_SECRET  = {'已设置' if (os.environ.get('FEISHU_SECRET', '') or '').strip() else '(空，无签名)'}")
     log(f"    SERVERCHAN_KEY = {'已设置' if has_serverchan else '(空)'}")
     log(f"    WEBHOOK_URL    = {'已设置' if has_webhook else '(空)'}")
     log(f"    邮件 SMTP      = {'已设置' if has_smtp else '(空)'}")
 
+    if has_feishu:
+        r = send_feishu(alerts)
+        if r:
+            return True
+        log("  飞书推送失败，尝试其他方式...")
     if has_serverchan:
         r = send_serverchan(alerts)
         if r:
@@ -283,7 +399,7 @@ def send_notification(alerts, config):
     if has_smtp:
         return send_email(alerts, config)
 
-    log("  ✗ 未配置任何推送方式（SERVERCHAN_KEY / WEBHOOK_URL / SMTP）")
+    log("  ✗ 未配置任何推送方式（FEISHU_WEBHOOK / SERVERCHAN_KEY / WEBHOOK_URL / SMTP）")
     return False
 
 
