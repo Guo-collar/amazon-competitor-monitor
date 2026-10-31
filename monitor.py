@@ -291,6 +291,18 @@ def send_feishu(alerts):
                 elements.append({"tag": "hr"})
 
         now_str = bjnow("%Y-%m-%d %H:%M")
+        elements.append({"tag": "hr"})
+        elements.append({
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "查看 / 手动触发抓取"},
+                    "type": "primary",
+                    "url": "https://github.com/Guo-collar/amazon-competitor-monitor/actions/workflows/monitor.yml",
+                }
+            ],
+        })
         elements.append({
             "tag": "note",
             "elements": [{"tag": "plain_text", "content": f"监控时间 {now_str} · 亚马逊竞品监控"}],
