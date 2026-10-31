@@ -1,0 +1,31 @@
+{
+  "site": "amazon.com",
+  "currency": "USD",
+  "asins": [
+    {
+      "asin": "B0C8TG35BF",
+      "name": "竞品A",
+      "note": "DownyPaws Cat Water Fountain Cordless 84oz/2.5L"
+    },
+    {
+      "asin": "B0DJVX1BX6",
+      "name": "竞品B",
+      "note": "Cat Water Fountain Wireless Stainless Steel 108oz/3.2L"
+    }
+  ],
+  "alert_rules": {
+    "price_change_threshold_usd": 0.5,
+    "price_change_threshold_pct": 3,
+    "stock_change": true,
+    "bsr_change_threshold": 20,
+    "sub_bsr_change_threshold_pct": 15,
+    "sub_bsr_change_threshold_rank": 3,
+    "out_of_stock": true,
+    "back_in_stock": true
+  },
+  "request": {
+    "timeout": 30,
+    "retry": 3,
+    "delay_between_asins": 5
+  }
+}
