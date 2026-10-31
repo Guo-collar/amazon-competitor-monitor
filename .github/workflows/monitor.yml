@@ -29,6 +29,8 @@ jobs:
 
       - name: 运行监控脚本
         env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -37,7 +39,7 @@ jobs:
           TEST_EMAIL_ONLY: ${{ inputs.test_email == true && '1' || '0' }}
         run: |
           if [ "$TEST_EMAIL_ONLY" = "1" ]; then
-            echo "=== 仅测试邮件模式 ==="
+            echo "=== 仅测试通知模式 ==="
             TEST_EMAIL=1 TEST_EMAIL_ONLY=1 python monitor.py
           else
             echo "=== 常规监控模式 ==="

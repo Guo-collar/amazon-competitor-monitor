@@ -8,9 +8,13 @@
   python monitor.py            # 常规监控：抓取+对比+预警
   python monitor.py --init     # 首次运行：仅建立基线不预警
 
-邮件推送（可选）：
-  通过环境变量配置 SMTP，有异常时发送邮件。未配置则不发送（仅写日志/预警文件）。
-  SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / ALERT_TO
+推送方式（可选，按优先级）：
+  1. Server酱（微信推送，推荐用于云端）：SERVERCHAN_KEY
+  2. 企业微信/飞书/钉钉 群机器人：WEBHOOK_URL
+  3. 邮件 SMTP：SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / ALERT_TO
+  三者都未配置时仅写日志和 alerts.jsonl。
+
+注意：QQ 邮箱 SMTP 无法从 GitHub Actions（美国节点）访问，云端请用 Server酱 或 Webhook。
 
 数据持久化（云端）：
   本脚本支持两种持久化方式：
@@ -27,6 +31,8 @@ import datetime
 import subprocess
 import tempfile
 import smtplib
+import urllib.request
+import urllib.parse
 from email.mime.text import MIMEText
 from email.header import Header
 
@@ -192,6 +198,95 @@ def append_alert(alert):
         f.write(json.dumps(alert, ensure_ascii=False) + "\n")
 
 
+def send_serverchan(alerts):
+    """通过 Server酱 推送到微信（可用于 GitHub Actions 云端）"""
+    key = os.environ.get("SERVERCHAN_KEY", "").strip()
+    if not key:
+        return None  # 未配置，交由其他方式
+    try:
+        title = f"亚马逊竞品预警 {len(alerts)} 条"
+        desp_lines = []
+        for a in alerts:
+            desp_lines.append(f"**[{a['type']}]** {a['detail']}")
+        desp = "\n\n".join(desp_lines)
+        data = urllib.parse.urlencode({"title": title, "desp": desp}).encode("utf-8")
+        url = f"https://sctapi.ftqq.com/{key}.send"
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+        log(f"  Server酱 响应: {body[:200]}")
+        if '"code":0' in body or '"errno":0' in body:
+            log("  ✓ 微信推送成功（Server酱）")
+            return True
+        log("  ✗ 微信推送失败（Server酱返回异常）")
+        return False
+    except Exception as e:
+        log(f"  ✗ Server酱 推送异常: {type(e).__name__}: {e}")
+        return False
+
+
+def send_webhook(alerts):
+    """通过群机器人 Webhook 推送（企业微信/飞书/钉钉通用 markdown 格式）"""
+    url = os.environ.get("WEBHOOK_URL", "").strip()
+    if not url:
+        return None
+    try:
+        title = f"亚马逊竞品预警 {len(alerts)} 条"
+        lines = [f"### {title}", ""]
+        for a in alerts:
+            lines.append(f"**[{a['type']}]** {a['detail']}")
+        content = "\n".join(lines)
+        # 兼容企业微信/钉钉(markdown)与飞书(text)
+        if "feishu" in url or "larksuite" in url:
+            payload = {"msg_type": "text", "content": {"text": title + "\n" + "\n".join(f"[{a['type']}] {a['detail']}" for a in alerts)}}
+        elif "dingtalk" in url:
+            payload = {"msgtype": "markdown", "markdown": {"title": title, "text": content}}
+        else:
+            payload = {"msgtype": "markdown", "markdown": {"content": content}}
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json; charset=utf-8")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+        log(f"  Webhook 响应: {body[:200]}")
+        if '"errcode":0' in body or '"code":0' in body or 'StatusCode":0' in body or body.strip():
+            log("  ✓ 群机器人推送成功")
+            return True
+        log("  ✗ 群机器人推送失败")
+        return False
+    except Exception as e:
+        log(f"  ✗ Webhook 推送异常: {type(e).__name__}: {e}")
+        return False
+
+
+def send_notification(alerts, config):
+    """统一推送入口：Server酱 → Webhook → 邮件，按优先级尝试"""
+    log("  --- 推送配置检查 ---")
+    has_serverchan = bool(os.environ.get("SERVERCHAN_KEY", "").strip())
+    has_webhook = bool(os.environ.get("WEBHOOK_URL", "").strip())
+    has_smtp = bool(os.environ.get("SMTP_HOST", "").strip() and os.environ.get("SMTP_USER", "").strip())
+    log(f"    SERVERCHAN_KEY = {'已设置' if has_serverchan else '(空)'}")
+    log(f"    WEBHOOK_URL    = {'已设置' if has_webhook else '(空)'}")
+    log(f"    邮件 SMTP      = {'已设置' if has_smtp else '(空)'}")
+
+    if has_serverchan:
+        r = send_serverchan(alerts)
+        if r:
+            return True
+        log("  Server酱 失败，尝试其他方式...")
+    if has_webhook:
+        r = send_webhook(alerts)
+        if r:
+            return True
+        log("  Webhook 失败，尝试其他方式...")
+    if has_smtp:
+        return send_email(alerts, config)
+
+    log("  ✗ 未配置任何推送方式（SERVERCHAN_KEY / WEBHOOK_URL / SMTP）")
+    return False
+
+
 def send_email(alerts, config):
     """通过 SMTP 发送预警邮件。未配置则跳过。"""
     smtp_host = os.environ.get("SMTP_HOST", "").strip()
@@ -324,10 +419,10 @@ def main():
     os.makedirs(DATA_DIR, exist_ok=True)
     log(f"===== 监控开始 ({'初始化基线' if init_mode else '常规监控'}{' + 测试邮件' if test_email_mode else ''}) =====")
 
-    # 仅测试邮件：不抓取，直接发一封测试邮件
+    # 仅测试推送：不抓取，直接发一条测试通知
     if test_email_mode and "--init" not in sys.argv and os.environ.get("TEST_EMAIL_ONLY") == "1":
-        ok = send_email([{"type": "测试", "detail": "仅测试邮件模式，未执行抓取。"}], config)
-        log(f"测试邮件{'发送成功' if ok else '发送失败'}")
+        ok = send_notification([{"type": "测试", "detail": "仅测试推送模式，未执行抓取。收到即代表配置成功。"}], config)
+        log(f"测试通知{'发送成功' if ok else '发送失败'}")
         return
 
     history = load_history()
@@ -375,12 +470,12 @@ def main():
         for a in all_alerts:
             append_alert({"time": now, **a})
         log(f"===== 本轮共 {len(all_alerts)} 条预警 =====")
-        send_email(all_alerts, config)
+        send_notification(all_alerts, config)
     else:
         log("===== 本轮无异常 =====")
         if test_email_mode:
-            log("  测试模式：发送测试邮件验证链路")
-            send_email([{"type": "测试", "detail": "这是一封测试邮件，用于验证邮件预警链路是否正常。收到即代表配置成功。"}], config)
+            log("  测试模式：发送测试通知验证推送链路")
+            send_notification([{"type": "测试", "detail": "这是一条测试通知，用于验证预警推送链路是否正常。收到即代表配置成功。"}], config)
     log("===== 监控结束 =====\n")
 
 
