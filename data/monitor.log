@@ -346,3 +346,31 @@
 [2026-11-02 01:30:53]   ✓ 飞书推送成功
 [2026-11-02 01:30:53] ===== 监控结束 =====
 
+[2026-11-02 05:30:37] ✅ 定时门控：距上次运行 4.00 小时，已达 3.8 小时周期
+[2026-11-02 05:30:37] ===== 监控开始 (常规监控) =====
+[2026-11-02 05:30:37] 抓取 竞品A (B0C8TG35BF) ...
+[2026-11-02 05:30:37]   [B0C8TG35BF] 第1次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-02 05:30:42]   [B0C8TG35BF] 第2次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-02 05:30:45]   [B0C8TG35BF] 第2次尝试成功（gp 站内路径）
+[2026-11-02 05:30:45]   → 价格: 29.99 | 原价: None | 折扣: 20% | 库存: Out of Stock | 大类BSR: None | 小类BSR: None | 评分: 4.3 | 评论数: 2153
+[2026-11-02 05:30:45]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
+[2026-11-02 05:30:45]   ✗ 竞品A (B0C8TG35BF) 抓取异常: 'NoneType' object has no attribute 'get'
+[2026-11-02 05:30:45] 抓取 竞品B (B0DJVX1BX6) ...
+[2026-11-02 05:30:45]   [B0DJVX1BX6] 第1次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-02 05:30:50]   [B0DJVX1BX6] 第2次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-02 05:30:53]   [B0DJVX1BX6] 第2次尝试成功（gp 站内路径）
+[2026-11-02 05:30:53]   → 价格: 39.99 | 原价: None | 折扣: None% | 库存: Out of Stock | 大类BSR: None | 小类BSR: None | 评分: 4.3 | 评论数: 3436
+[2026-11-02 05:30:53]   → 标题: Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery
+[2026-11-02 05:30:53]   ✗ 竞品B (B0DJVX1BX6) 抓取异常: 'NoneType' object has no attribute 'get'
+[2026-11-02 05:30:53]   ⚠ 预警: [抓取异常] 全部 2 个竞品抓取失败，本轮监控失效，需检查：竞品A(B0C8TG35BF)、竞品B(B0DJVX1BX6)
+[2026-11-02 05:30:53] ===== 本轮共 1 条预警 =====
+[2026-11-02 05:30:53]   --- 推送配置检查 ---
+[2026-11-02 05:30:53]     FEISHU_WEBHOOK = 已设置
+[2026-11-02 05:30:53]     FEISHU_SECRET  = 已设置
+[2026-11-02 05:30:53]     SERVERCHAN_KEY = (空)
+[2026-11-02 05:30:53]     WEBHOOK_URL    = (空)
+[2026-11-02 05:30:53]     邮件 SMTP      = (空)
+[2026-11-02 05:30:54]   飞书响应: {"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}
+[2026-11-02 05:30:54]   ✓ 飞书推送成功
+[2026-11-02 05:30:54] ===== 监控结束 =====
+
