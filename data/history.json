@@ -8,7 +8,7 @@
     "discount": 50,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 3877,
+      "rank": 3853,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
@@ -17,18 +17,18 @@
     },
     "rating": 4.3,
     "reviews": 2152,
-    "time": "2026-11-01 17:30:36"
+    "time": "2026-11-01 21:30:39"
   },
   "B0DJVX1BX6": {
     "asin": "B0DJVX1BX6",
     "name": "竞品B",
     "title": "Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery",
-    "price": 37.99,
-    "list_price": 39.99,
-    "discount": 5,
+    "price": 39.99,
+    "list_price": null,
+    "discount": null,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 4239,
+      "rank": 4251,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
@@ -37,6 +37,6 @@
     },
     "rating": 4.3,
     "reviews": 3436,
-    "time": "2026-11-01 17:30:36"
+    "time": "2026-11-01 21:30:39"
   }
 }
