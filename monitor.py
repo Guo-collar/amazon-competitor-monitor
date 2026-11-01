@@ -119,39 +119,134 @@ def load_config():
         return json.load(f)
 
 
+# 浏览器指纹池：UA 必须与 sec-ch-ua / platform 匹配，否则反而更可疑
+_UA_PROFILES = [
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "ch_ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+        "platform": '"Windows"',
+        "mobile": "?0",
+    },
+    {
+        "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "ch_ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+        "platform": '"macOS"',
+        "mobile": "?0",
+    },
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+        "ch_ua": '"Microsoft Edge";v="129", "Chromium";v="129", "Not=A?Brand";v="24"',
+        "platform": '"Windows"',
+        "mobile": "?0",
+    },
+]
+
+# 反爬页面特征词（命中即判为无效页面）
+_BLOCK_MARKERS = (
+    "api-services-support@amazon.com",
+    "Type the characters you see",
+    "Enter the characters you see below",
+    "Robot Check",
+    "automated access to Amazon data",
+    "Sorry, we just need to make sure",
+)
+
+
+def _diag_page(html):
+    """输出页面诊断信息，便于判断是验证页、降级页还是改版"""
+    title = ""
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
+    if m:
+        title = re.sub(r"\s+", " ", m.group(1)).strip()[:70]
+    hits = [k for k in _BLOCK_MARKERS if k.lower() in html.lower()]
+    return f"长度={len(html)} 标题={title!r} 反爬特征={hits or '无'}"
+
+
+def _page_ok(html):
+    """返回的页面是否真的包含商品与价格（而非降级页/验证页）"""
+    if not html or len(html) < 50000:
+        return False
+    if any(k.lower() in html.lower() for k in _BLOCK_MARKERS):
+        return False
+    if "productTitle" not in html:
+        return False
+    return parse_price(html) is not None
+
+
 def fetch_page(asin, config):
-    """用 curl 抓取页面（curl 的 TLS 特征能绕过亚马逊机器人检测）"""
-    url = f"https://www.amazon.com/dp/{asin}?currencyOfPreference=USD&language=en_US"
+    """用 curl 抓取页面（curl 的 TLS 特征能绕过亚马逊机器人检测）
+
+    可靠性设计：
+      1. 完整的现代浏览器请求头（含 sec-ch-ua / sec-fetch 系列），缺这些是云端被降级的主因
+      2. UA 指纹轮换，避免单一指纹被标记
+      3. 主站页面失败后改用移动版 /gp/aw/d/ 兜底（移动版风控更宽松）
+      4. 严格校验：必须同时有 productTitle 与可解析价格，否则重试
+    """
     timeout = config["request"]["timeout"]
     retry = config["request"]["retry"]
+    # 第 1 轮用主站，后续轮次交替尝试移动版
+    url_templates = [
+        "https://www.amazon.com/dp/{asin}?currencyOfPreference=USD&language=en_US&th=1&psc=1",
+        "https://www.amazon.com/gp/aw/d/{asin}?currencyOfPreference=USD&language=en_US",
+    ]
     last_err = None
     for i in range(retry):
-        tmp = os.path.join(tempfile.gettempdir(), f"amz_{asin}_{os.getpid()}.html")
-        try:
-            cmd = [
-                "curl", "-sL",
-                "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "-H", "Accept-Language: en-US,en;q=0.9",
-                "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "-b", "i18n-prefs=USD; lc-main=en_US;",
-                "--max-time", str(timeout),
-                "-o", tmp,
-                url,
-            ]
-            subprocess.run(cmd, check=True, capture_output=True, timeout=timeout + 10)
-            with open(tmp, "r", encoding="utf-8", errors="ignore") as f:
-                html = f.read()
-            if os.path.exists(tmp):
-                os.remove(tmp)
-            if "productTitle" in html or "a-offscreen" in html or len(html) > 100000:
-                return html
-            log(f"  [{asin}] 第{i+1}次返回疑似验证页(长度{len(html)}), 重试...")
-            last_err = f"疑似验证页, 长度{len(html)}"
-        except Exception as e:
-            last_err = e
-            log(f"  [{asin}] 第{i+1}次抓取失败: {e}")
-        time.sleep(4)
-    raise RuntimeError(f"抓取失败: {last_err}")
+        profile = _UA_PROFILES[i % len(_UA_PROFILES)]
+        for tpl in (url_templates if i > 0 else url_templates[:1]):
+            url = tpl.format(asin=asin)
+            tmp = os.path.join(tempfile.gettempdir(), f"amz_{asin}_{os.getpid()}_{i}.html")
+            try:
+                cmd = [
+                    "curl", "-sL", "--compressed",
+                    "-H", f"User-Agent: {profile['ua']}",
+                    "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "-H", "Accept-Language: en-US,en;q=0.9",
+                    "-H", "Upgrade-Insecure-Requests: 1",
+                    "-H", "Sec-Fetch-Dest: document",
+                    "-H", "Sec-Fetch-Mode: navigate",
+                    "-H", "Sec-Fetch-Site: none",
+                    "-H", "Sec-Fetch-User: ?1",
+                    "-H", f"sec-ch-ua: {profile['ch_ua']}",
+                    "-H", f"sec-ch-ua-mobile: {profile['mobile']}",
+                    "-H", f"sec-ch-ua-platform: {profile['platform']}",
+                    "-H", "sec-gpc: 1",
+                    "-H", "Cache-Control: max-age=0",
+                    "-b", "i18n-prefs=USD; lc-main=en_US;",
+                    "--max-time", str(timeout),
+                    "-o", tmp,
+                    url,
+                ]
+                subprocess.run(cmd, check=True, capture_output=True, timeout=timeout + 10)
+                with open(tmp, "r", encoding="utf-8", errors="ignore") as f:
+                    html = f.read()
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+
+                if _page_ok(html):
+                    if i > 0:
+                        log(f"  [{asin}] 第{i+1}次尝试成功（{url.split('/')[3]} 站内路径）")
+                    return html
+
+                last_err = _diag_page(html)
+                log(f"  [{asin}] 第{i+1}次无效页面: {last_err}")
+                # 保存无效页面样本，便于事后判断是验证页 / 降级页 / 改版
+                try:
+                    os.makedirs(DATA_DIR, exist_ok=True)
+                    with open(os.path.join(DATA_DIR, f"bad_{asin}.html"), "w", encoding="utf-8") as bf:
+                        bf.write(html[:8000])
+                except Exception:
+                    pass
+            except Exception as e:
+                last_err = e
+                log(f"  [{asin}] 第{i+1}次抓取失败: {e}")
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except Exception:
+                        pass
+            time.sleep(2)
+        time.sleep(3 + i * 4)  # 轮次间退避：3s / 7s / 11s
+    raise RuntimeError(f"抓取失败（{retry}轮全无效）: {last_err}")
 
 
 def parse_price(html):

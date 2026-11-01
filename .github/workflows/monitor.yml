@@ -74,6 +74,20 @@ jobs:
             echo ""
             echo "===== 脚本日志（末40行） ====="
             tail -40 data/monitor.log 2>/dev/null || echo "(无日志)"
+            echo ""
+            echo "===== 无效页面样本（若抓取失败） ====="
+            for f in data/bad_*.html; do
+              [ -e "$f" ] || continue
+              echo "--- $f ---"
+              head -c 2500 "$f" | tr -d '\0'
+              echo ""
+              echo "--- 关键特征扫描 ---"
+              echo -n "含 captcha: "; grep -c -i "captcha" "$f" 2>/dev/null || echo 0
+              echo -n "含 productTitle: "; grep -c "productTitle" "$f" 2>/dev/null || echo 0
+              echo -n "含 a-offscreen: "; grep -c "a-offscreen" "$f" 2>/dev/null || echo 0
+              echo -n "含 \$ 价格: "; grep -c -o '\$[0-9]' "$f" 2>/dev/null | head -1 || echo 0
+              echo ""
+            done
           } > data/diag.txt
           cat data/diag.txt
 
