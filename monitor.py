@@ -173,26 +173,65 @@ def _page_ok(html):
     return parse_price(html) is not None
 
 
+def _warmup_session(profile, timeout):
+    """先访问首页拿到 session cookie（session-id 等），让后续商品页请求是"有会话的浏览器"。
+    实测：云端 IP 直接请求 /dp/ 常被 3781 字节验证页拦截，无 cookie 是重要原因之一。"""
+    jar = os.path.join(tempfile.gettempdir(), f"amz_jar_{os.getpid()}.txt")
+    try:
+        subprocess.run([
+            "curl", "-s", "--compressed",
+            "-c", jar,
+            "-H", f"User-Agent: {profile['ua']}",
+            "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "-H", "Accept-Language: en-US,en;q=0.9",
+            "-H", "Upgrade-Insecure-Requests: 1",
+            "-H", "Sec-Fetch-Dest: document",
+            "-H", "Sec-Fetch-Mode: navigate",
+            "-H", "Sec-Fetch-Site: none",
+            "-H", "Sec-Fetch-User: ?1",
+            "-H", f"sec-ch-ua: {profile['ch_ua']}",
+            "-H", f"sec-ch-ua-mobile: {profile['mobile']}",
+            "-H", f"sec-ch-ua-platform: {profile['platform']}",
+            "--max-time", str(min(timeout, 20)),
+            "-o", os.devnull,
+            "https://www.amazon.com/",
+        ], check=False, capture_output=True, timeout=timeout + 5)
+        if os.path.exists(jar):
+            # 追加币种偏好，确保后续页面是美元
+            return jar
+    except Exception as e:
+        log(f"  [预热] 会话预热失败（忽略）: {type(e).__name__}")
+    return None
+
+
 def fetch_page(asin, config):
     """用 curl 抓取页面（curl 的 TLS 特征能绕过亚马逊机器人检测）
 
     可靠性设计：
       1. 完整的现代浏览器请求头（含 sec-ch-ua / sec-fetch 系列），缺这些是云端被降级的主因
-      2. UA 指纹轮换，避免单一指纹被标记
-      3. 主站页面失败后改用移动版 /gp/aw/d/ 兜底（移动版风控更宽松）
-      4. 严格校验：必须同时有 productTitle 与可解析价格，否则重试
+      2. 先访问首页预热 session cookie，再请求商品页（无会话是 /dp/ 被拦的主因）
+      3. 带 Referer，模拟站内跳转
+      4. UA 指纹轮换，避免单一指纹被标记
+      5. 主站页面失败后改用移动版 /gp/aw/d/ 兜底（但移动版无 BSR 表格，仅作兜底）
+      6. 优选含 BSR 的桌面版页面；严格校验：必须同时有 productTitle 与可解析价格
     """
     timeout = config["request"]["timeout"]
     retry = config["request"]["retry"]
-    # 第 1 轮用主站，后续轮次交替尝试移动版
+    # 第 1 轮用桌面版，后续轮次追加移动版兜底
     url_templates = [
         "https://www.amazon.com/dp/{asin}?currencyOfPreference=USD&language=en_US&th=1&psc=1",
         "https://www.amazon.com/gp/aw/d/{asin}?currencyOfPreference=USD&language=en_US",
     ]
+    # 每套指纹各自预热一个会话
+    jars = {}
     last_err = None
     best_html = None  # 有效但缺 BSR 的候选页面（兜底用）
     for i in range(retry):
         profile = _UA_PROFILES[i % len(_UA_PROFILES)]
+        pk = i % len(_UA_PROFILES)
+        if pk not in jars:
+            jars[pk] = _warmup_session(profile, timeout)
+        jar = jars[pk]
         tpl_list = url_templates if i > 0 else url_templates[:1]
         for ti, tpl in enumerate(tpl_list):
             url = tpl.format(asin=asin)
@@ -203,6 +242,7 @@ def fetch_page(asin, config):
                     "-H", f"User-Agent: {profile['ua']}",
                     "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                     "-H", "Accept-Language: en-US,en;q=0.9",
+                    "-H", "Referer: https://www.amazon.com/",
                     "-H", "Upgrade-Insecure-Requests: 1",
                     "-H", "Sec-Fetch-Dest: document",
                     "-H", "Sec-Fetch-Mode: navigate",
@@ -214,10 +254,11 @@ def fetch_page(asin, config):
                     "-H", "sec-gpc: 1",
                     "-H", "Cache-Control: max-age=0",
                     "-b", "i18n-prefs=USD; lc-main=en_US;",
-                    "--max-time", str(timeout),
-                    "-o", tmp,
-                    url,
                 ]
+                # 叠加预热得到的 session cookie（有会话的请求更像真实用户）
+                if jar:
+                    cmd += ["-b", jar]
+                cmd += ["--max-time", str(timeout), "-o", tmp, url]
                 subprocess.run(cmd, check=True, capture_output=True, timeout=timeout + 10)
                 with open(tmp, "r", encoding="utf-8", errors="ignore") as f:
                     html = f.read()

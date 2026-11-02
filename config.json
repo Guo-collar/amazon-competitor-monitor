@@ -25,7 +25,7 @@
   },
   "request": {
     "timeout": 30,
-    "retry": 3,
+    "retry": 4,
     "delay_between_asins": 5
   }
 }
