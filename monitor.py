@@ -190,9 +190,11 @@ def fetch_page(asin, config):
         "https://www.amazon.com/gp/aw/d/{asin}?currencyOfPreference=USD&language=en_US",
     ]
     last_err = None
+    best_html = None  # 有效但缺 BSR 的候选页面（兜底用）
     for i in range(retry):
         profile = _UA_PROFILES[i % len(_UA_PROFILES)]
-        for tpl in (url_templates if i > 0 else url_templates[:1]):
+        tpl_list = url_templates if i > 0 else url_templates[:1]
+        for ti, tpl in enumerate(tpl_list):
             url = tpl.format(asin=asin)
             tmp = os.path.join(tempfile.gettempdir(), f"amz_{asin}_{os.getpid()}_{i}.html")
             try:
@@ -223,9 +225,20 @@ def fetch_page(asin, config):
                     os.remove(tmp)
 
                 if _page_ok(html):
-                    if i > 0:
-                        log(f"  [{asin}] 第{i+1}次尝试成功（{url.split('/')[3]} 站内路径）")
-                    return html
+                    # 优选「含 BSR 表格的完整页面」：Amazon 对云端 IP 有时返回精简版
+                    # （有价格/评分，但省掉 Best Sellers Rank 模块）。遇到精简版不立即返回，
+                    # 继续换指纹/路径再试，全部失败才退而使用精简版。
+                    has_bsr = parse_bsr(html) is not None and parse_sub_bsr(html) is not None
+                    if has_bsr:
+                        if i > 0 or ti > 0:
+                            log(f"  [{asin}] 第{i+1}次尝试成功（{url.split('/')[3]} 路径，含BSR）")
+                        return html
+                    if best_html is None:
+                        best_html = html
+                        log(f"  [{asin}] 第{i+1}次页面有效但缺 BSR（{len(html)}字节），继续尝试其他指纹")
+                    else:
+                        log(f"  [{asin}] 第{i+1}次页面有效但缺 BSR（{len(html)}字节），已有候选，继续")
+                    continue
 
                 last_err = _diag_page(html)
                 log(f"  [{asin}] 第{i+1}次无效页面: {last_err}")
@@ -246,6 +259,10 @@ def fetch_page(asin, config):
                         pass
             time.sleep(2)
         time.sleep(3 + i * 4)  # 轮次间退避：3s / 7s / 11s
+
+    if best_html is not None:
+        log(f"  [{asin}] ⚠ 未取得含 BSR 的完整页面，使用候选页（价格可用，BSR 将沿用旧值）")
+        return best_html
     raise RuntimeError(f"抓取失败（{retry}轮全无效）: {last_err}")
 
 
@@ -298,22 +315,58 @@ def parse_stock(html):
 
 
 def parse_bsr(html):
-    """大类 Best Seller Rank（zg_ts）"""
-    m = re.search(r'zg_ts">[^#]*#([0-9,]+)\s+in\s+<a[^>]*>([^<]+)', html)
+    """大类 Best Seller Rank（zg_ts）
+
+    页面实测结构（2026-11）：
+      <li><span class="a-list-item"><span>#3,877 in Pet Supplies
+          (<a href='/gp/bestsellers/pet-supplies/ref=pd_zg_ts_pet-supplies'>See Top 100...</a>)</span></span></li>
+    注意 zg_ts 出现在链接 ref 里、后面紧跟 "_类目名" 而不是 '">'，
+    所以不能用 'zg_ts">#N' 这种写法，改为围绕 Best Sellers Rank 表格定位。
+    """
+    # 优先：限定在 Best Sellers Rank 明细表内，避免抓到推荐位商品的排名
+    window = html
+    idx = html.find("Best Sellers Rank")
+    if idx > 0:
+        window = html[idx: idx + 4000]
+    m = re.search(r'#([0-9,]+)\s+in\s+([A-Za-z][^<()]{1,60}?)\s*(?:\(|</)', window)
     if m:
         return {"rank": int(m.group(1).replace(",", "")), "category": m.group(2).strip()}
-    m = re.search(r'#([0-9,]+)\s+in\s+([^<(]+)', html)
+    # 兜底：全页任意 "#N in 某类目"
+    m = re.search(r'#([0-9,]+)\s+in\s+([A-Za-z][^<()]{1,60}?)\s*(?:\(|</)', html)
     if m:
         return {"rank": int(m.group(1).replace(",", "")), "category": m.group(2).strip()}
     return None
 
 
 def parse_sub_bsr(html):
-    """小类 Best Seller Rank（zg_hrsr）"""
-    m = re.search(r'zg_hrsr">\s*<li><span class="a-list-item">\s*#([0-9,]+)\s+in\s+<a[^>]*>([^<]+)', html)
+    """小类 Best Seller Rank（zg_hrsr）
+
+    页面实测结构（2026-11）：
+      <li><span class="a-list-item"><span>#37 in
+          <a href='/gp/bestsellers/pet-supplies/2975263011/ref=pd_zg_hrsr_pet-supplies'>Cat Fountains</a></span></span></li>
+    关键特征：排名数字后面直接跟 <a> 链接，链接 href 里含 zg_hrsr。
+    """
+    m = re.search(r'#([0-9,]+)\s+in\s+<a[^>]*zg_hrsr[^>]*>([^<]+)</a>', html)
+    if m:
+        return {"rank": int(m.group(1).replace(",", "")), "category": m.group(2).strip()}
+    # 兼容旧结构：zg_hrsr 后接 a-list-item 列表
+    m = re.search(r'zg_hrsr[^>]*>\s*<li><span class="a-list-item">\s*(?:<span>)?#([0-9,]+)\s+in\s+<a[^>]*>([^<]+)', html)
     if m:
         return {"rank": int(m.group(1).replace(",", "")), "category": m.group(2).strip()}
     return None
+
+
+def diagnose_bsr(html):
+    """BSR 解析失败时输出可定位的诊断信息（云端页面与本地不同，必须能把证据打出来）"""
+    bits = [f"长度={len(html)}"]
+    bits.append(f"含'Best Sellers Rank'={'Best Sellers Rank' in html}")
+    bits.append(f"zg_ts出现{html.count('zg_ts')}次")
+    bits.append(f"zg_hrsr出现{html.count('zg_hrsr')}次")
+    idx = html.find("Best Sellers Rank")
+    if idx > 0:
+        seg = re.sub(r"\s+", " ", html[idx: idx + 500])
+        bits.append(f"片段={seg[:340]!r}")
+    return " | ".join(bits)
 
 
 def parse_title(html):
@@ -710,6 +763,16 @@ def send_email(alerts, config):
         return False
 
 
+def _rank_of(record, field):
+    """安全读取 bsr / sub_bsr 的 rank。
+    字段可能缺失，也可能存在但值为 None（页面没抓到 BSR 时），两者都必须安全返回 None。
+    历史 bug：用 record.get(field, {}).get("rank") 时，字段值为 None 会抛
+    'NoneType' object has no attribute 'get'，导致整轮被判为「抓取异常」。
+    """
+    v = (record or {}).get(field)
+    return v.get("rank") if isinstance(v, dict) else None
+
+
 def compare_and_alert(asin_info, old, new):
     asin = asin_info["asin"]
     name = asin_info["name"]
@@ -734,16 +797,16 @@ def compare_and_alert(asin_info, old, new):
     if rules["back_in_stock"] and old_stock == "Out of Stock" and new_stock and new_stock != "Out of Stock":
         alerts.append({"type": "回货预警", "detail": f"{name}({asin}) 已回货: {new_stock}"})
 
-    old_bsr = old.get("bsr", {}).get("rank") if old else None
-    new_bsr = new.get("bsr", {}).get("rank") if new else None
+    old_bsr = _rank_of(old, "bsr")
+    new_bsr = _rank_of(new, "bsr")
     if old_bsr and new_bsr:
         change_pct = (old_bsr - new_bsr) / old_bsr * 100
         if abs(change_pct) >= rules["bsr_change_threshold"]:
             direction = "上升(变好)" if change_pct > 0 else "下降(变差)"
             alerts.append({"type": "大类BSR变化", "detail": f"{name}({asin}) 大类BSR排名{direction}: #{old_bsr} → #{new_bsr} ({change_pct:+.1f}%)"})
 
-    old_sub_bsr = old.get("sub_bsr", {}).get("rank") if old else None
-    new_sub_bsr = new.get("sub_bsr", {}).get("rank") if new else None
+    old_sub_bsr = _rank_of(old, "sub_bsr")
+    new_sub_bsr = _rank_of(new, "sub_bsr")
     if old_sub_bsr and new_sub_bsr:
         change_pct = (old_sub_bsr - new_sub_bsr) / old_sub_bsr * 100
         rank_diff = abs(new_sub_bsr - old_sub_bsr)
@@ -856,6 +919,20 @@ def main():
                 if new_data["reviews"] < old_data["reviews"]:
                     log(f"  ⚠ 评论数异常回退 {old_data['reviews']} → {new_data['reviews']}，判定为页面抖动，沿用旧值")
                     new_data["reviews"] = old_data["reviews"]
+
+            # BSR 缺失处理：页面可能被降级为精简版（有价格、无 Best Sellers Rank 表格）
+            # 此时沿用旧值，避免基线被写成 None、也避免空值继续向下游传播
+            if new_data["bsr"] is None or new_data["sub_bsr"] is None:
+                log(f"  ⚠ BSR 未解析到: {diagnose_bsr(html)[:400]}")
+                if old_data:
+                    if new_data["bsr"] is None and isinstance(old_data.get("bsr"), dict):
+                        log(f"     → 大类BSR 沿用旧值 #{old_data['bsr'].get('rank')}")
+                        new_data["bsr"] = old_data["bsr"]
+                    if new_data["sub_bsr"] is None and isinstance(old_data.get("sub_bsr"), dict):
+                        log(f"     → 小类BSR 沿用旧值 #{old_data['sub_bsr'].get('rank')}")
+                        new_data["sub_bsr"] = old_data["sub_bsr"]
+                else:
+                    log("     → 无历史基线可沿用，BSR 留空")
             log(f"  → 价格: {new_data['price']} | 原价: {new_data['list_price']} | 折扣: {new_data['discount']}% | 库存: {new_data['stock']} | 大类BSR: {new_data['bsr']} | 小类BSR: {new_data['sub_bsr']} | 评分: {new_data['rating']} | 评论数: {new_data['reviews']}")
             log(f"  → 标题: {new_data['title']}")
 
