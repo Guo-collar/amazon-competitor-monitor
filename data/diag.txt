@@ -1,29 +1,9 @@
-===== 推送配置诊断 2026-11-07 13:01:25 UTC =====
+===== 推送配置诊断 2026-11-07 17:00:54 UTC =====
 FEISHU_WEBHOOK 长度: 81
 FEISHU_SECRET  长度: 22
 FEISHU_WEBHOOK 前缀: https://open.feishu.cn/open-apis
 
 ===== 脚本日志（末40行） =====
-[2026-11-07 17:00:49]   → 标题: Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery
-[2026-11-07 17:00:54] ===== 本轮共 1 条预警 =====
-[2026-11-07 17:00:54]   --- 推送配置检查 ---
-[2026-11-07 17:00:54]     FEISHU_WEBHOOK = 已设置
-[2026-11-07 17:00:54]     FEISHU_SECRET  = 已设置
-[2026-11-07 17:00:54]     SERVERCHAN_KEY = (空)
-[2026-11-07 17:00:54]     WEBHOOK_URL    = (空)
-[2026-11-07 17:00:54]     邮件 SMTP      = (空)
-[2026-11-07 17:00:55]   飞书响应: {"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}
-[2026-11-07 17:00:55]   ✓ 飞书推送成功
-[2026-11-07 17:00:55] ===== 监控结束 =====
-
-[2026-11-07 21:00:37] ✅ 定时门控：距上次运行 4.00 小时，已达 3.8 小时周期
-[2026-11-07 21:00:37] ===== 监控开始 (常规监控) =====
-[2026-11-07 21:00:37] 抓取 竞品A (B0C8TG35BF) ...
-[2026-11-07 21:00:37]   [B0C8TG35BF] 第1次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
-[2026-11-07 21:00:42]   [B0C8TG35BF] 第2次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
-[2026-11-07 21:00:45]   [B0C8TG35BF] 第2次页面有效但缺 BSR（990582字节），继续尝试其他指纹
-[2026-11-07 21:00:55]   [B0C8TG35BF] 第3次尝试成功（dp 路径，含BSR）
-[2026-11-07 21:00:55]   → 价格: 29.99 | 原价: 59.99 | 折扣: 50% | 库存: Out of Stock | 大类BSR: {'rank': 4071, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 45, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 2161
 [2026-11-07 21:00:55]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
 [2026-11-07 21:01:00] 抓取 竞品B (B0DJVX1BX6) ...
 [2026-11-07 21:01:01]   [B0DJVX1BX6] 第1次页面有效但缺 BSR（1061531字节），继续尝试其他指纹
@@ -44,123 +24,25 @@ FEISHU_WEBHOOK 前缀: https://open.feishu.cn/open-apis
 [2026-11-07 21:01:25]   ✓ 飞书推送成功
 [2026-11-07 21:01:25] ===== 监控结束 =====
 
+[2026-11-08 01:00:38] ✅ 定时门控：距上次运行 3.99 小时，已达 3.8 小时周期
+[2026-11-08 01:00:38] ===== 监控开始 (常规监控) =====
+[2026-11-08 01:00:38] 抓取 竞品A (B0C8TG35BF) ...
+[2026-11-08 01:00:40]   → 价格: 29.99 | 原价: 59.99 | 折扣: 50% | 库存: Out of Stock | 大类BSR: {'rank': 4068, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 45, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 2161
+[2026-11-08 01:00:40]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
+[2026-11-08 01:00:45] 抓取 竞品B (B0DJVX1BX6) ...
+[2026-11-08 01:00:47]   → 价格: 28.49 | 原价: 29.99 | 折扣: 5% | 库存: Out of Stock | 大类BSR: {'rank': 4696, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 55, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 3446
+[2026-11-08 01:00:47]   → 标题: Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery
+[2026-11-08 01:00:52] ===== 本轮无异常 =====
+[2026-11-08 01:00:52]   推送常规巡检报告（本轮无异常）
+[2026-11-08 01:00:52]   --- 推送配置检查 ---
+[2026-11-08 01:00:52]     FEISHU_WEBHOOK = 已设置
+[2026-11-08 01:00:52]     FEISHU_SECRET  = 已设置
+[2026-11-08 01:00:52]     SERVERCHAN_KEY = (空)
+[2026-11-08 01:00:52]     WEBHOOK_URL    = (空)
+[2026-11-08 01:00:52]     邮件 SMTP      = (空)
+[2026-11-08 01:00:54]   飞书响应: {"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}
+[2026-11-08 01:00:54]   ✓ 飞书推送成功
+[2026-11-08 01:00:54] ===== 监控结束 =====
+
 
 ===== 无效页面样本（若抓取失败） =====
---- data/bad_B0C8TG35BF.html ---
-<!DOCTYPE html>
-<!--[if lt IE 7]> <html lang="en-us" class="a-no-js a-lt-ie9 a-lt-ie8 a-lt-ie7"> <![endif]-->
-<!--[if IE 7]>    <html lang="en-us" class="a-no-js a-lt-ie9 a-lt-ie8"> <![endif]-->
-<!--[if IE 8]>    <html lang="en-us" class="a-no-js a-lt-ie9"> <![endif]-->
-<!--[if gt IE 8]><!-->
-<html class="a-no-js" lang="en-us"><!--<![endif]--><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
-<meta charset="utf-8">
-<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-<title dir="ltr">Amazon.com</title>
-<meta name="viewport" content="width=device-width">
-<link rel="stylesheet" href="https://images-na.ssl-images-amazon.com/images/G/01/AUIClients/AmazonUI-3c913031596ca78a3768f4e934b1cc02ce238101.secure.min._V1_.css">
-</head>
-<body>
-
-<!--
-        To discuss automated access to Amazon data please contact api-services-support@amazon.com.
-        For information about migrating to our APIs refer to our Marketplace APIs at https://developer.amazonservices.com/ref=rm_c_sv, or our Product Advertising API at https://affiliate-program.amazon.com/gp/advertising/api/detail/main.html/ref=rm_c_ac for advertising use cases.
--->
-
-<!--
-Correios.DoNotSend
--->
-
-<div class="a-container a-padding-double-large" style="min-width:350px;padding:44px 0 !important">
-
-    <div class="a-row a-spacing-double-large" style="width: 350px; margin: 0 auto">
-
-        <div class="a-row a-spacing-medium a-text-center"><i class="a-icon a-logo" alt="Amazon logo"></i></div>
-
-        <div class="a-box a-alert a-alert-info a-spacing-base">
-            <div class="a-box-inner">
-                <i class="a-icon a-icon-alert" alt="Alert icon"></i>
-                <h4>Click the button below to continue shopping</h4>
-                </div>
-            </div>
-
-            <div class="a-section">
-
-                <div class="a-box a-color-offset-background">
-                    <div class="a-box-inner a-padding-extra-large">
-
-                        <form method="get" action="/errors_page/validateCaptcha" name="">
-                            <input type="hidden" name="amzn" value="9y3pxNxMhswpf0ur0/+P+Q==" /><input type="hidden" name="amzn-r" value="&#047;" />
-                            <input type="hidden" name="field-keywords" value="HFHNGT" />
-                            <div class="a-section a-spacing-extra-large">
-
-                                <div class="a-row">
-                                    <span class="a-button a-button-primary a-span12">
-                 
---- 关键特征扫描 ---
-含 captcha: 1
-含 productTitle: 0
-0
-含 a-offscreen: 0
-0
-含 $ 价格: 0
-
---- data/bad_B0DJVX1BX6.html ---
-<!DOCTYPE html>
-<!--[if lt IE 7]> <html lang="en-us" class="a-no-js a-lt-ie9 a-lt-ie8 a-lt-ie7"> <![endif]-->
-<!--[if IE 7]>    <html lang="en-us" class="a-no-js a-lt-ie9 a-lt-ie8"> <![endif]-->
-<!--[if IE 8]>    <html lang="en-us" class="a-no-js a-lt-ie9"> <![endif]-->
-<!--[if gt IE 8]><!-->
-<html class="a-no-js" lang="en-us"><!--<![endif]--><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
-<meta charset="utf-8">
-<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-<title dir="ltr">Amazon.com</title>
-<meta name="viewport" content="width=device-width">
-<link rel="stylesheet" href="https://images-na.ssl-images-amazon.com/images/G/01/AUIClients/AmazonUI-3c913031596ca78a3768f4e934b1cc02ce238101.secure.min._V1_.css">
-</head>
-<body>
-
-<!--
-        To discuss automated access to Amazon data please contact api-services-support@amazon.com.
-        For information about migrating to our APIs refer to our Marketplace APIs at https://developer.amazonservices.com/ref=rm_c_sv, or our Product Advertising API at https://affiliate-program.amazon.com/gp/advertising/api/detail/main.html/ref=rm_c_ac for advertising use cases.
--->
-
-<!--
-Correios.DoNotSend
--->
-
-<div class="a-container a-padding-double-large" style="min-width:350px;padding:44px 0 !important">
-
-    <div class="a-row a-spacing-double-large" style="width: 350px; margin: 0 auto">
-
-        <div class="a-row a-spacing-medium a-text-center"><i class="a-icon a-logo" alt="Amazon logo"></i></div>
-
-        <div class="a-box a-alert a-alert-info a-spacing-base">
-            <div class="a-box-inner">
-                <i class="a-icon a-icon-alert" alt="Alert icon"></i>
-                <h4>Click the button below to continue shopping</h4>
-                </div>
-            </div>
-
-            <div class="a-section">
-
-                <div class="a-box a-color-offset-background">
-                    <div class="a-box-inner a-padding-extra-large">
-
-                        <form method="get" action="/errors_page/validateCaptcha" name="">
-                            <input type="hidden" name="amzn" value="QhmficFcvyHdjCcxm3DeiQ==" /><input type="hidden" name="amzn-r" value="&#047;" />
-                            <input type="hidden" name="field-keywords" value="PCPEHM" />
-                            <div class="a-section a-spacing-extra-large">
-
-                                <div class="a-row">
-                                    <span class="a-button a-button-primary a-span12">
-                 
---- 关键特征扫描 ---
-含 captcha: 1
-含 productTitle: 0
-0
-含 a-offscreen: 0
-0
-含 $ 价格: 0
-
