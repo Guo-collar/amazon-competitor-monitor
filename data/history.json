@@ -4,11 +4,11 @@
     "name": "竞品A",
     "title": "DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro",
     "price": 29.99,
-    "list_price": 53.99,
-    "discount": 44,
+    "list_price": 59.99,
+    "discount": 50,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 4047,
+      "rank": 4048,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
@@ -17,7 +17,7 @@
     },
     "rating": 4.3,
     "reviews": 2163,
-    "time": "2026-11-08 21:00:38"
+    "time": "2026-11-09 01:00:38"
   },
   "B0DJVX1BX6": {
     "asin": "B0DJVX1BX6",
@@ -28,7 +28,7 @@
     "discount": 5,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 4128,
+      "rank": 4129,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
@@ -37,6 +37,6 @@
     },
     "rating": 4.3,
     "reviews": 3446,
-    "time": "2026-11-08 21:00:38"
+    "time": "2026-11-09 01:00:38"
   }
 }
