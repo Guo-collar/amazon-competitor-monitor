@@ -1826,3 +1826,28 @@
 [2026-11-13 09:00:54]   ✓ 飞书推送成功
 [2026-11-13 09:00:54] ===== 监控结束 =====
 
+[2026-11-13 13:00:38] ✅ 定时门控：距上次运行 4.00 小时，已达 3.8 小时周期
+[2026-11-13 13:00:38] ===== 监控开始 (常规监控) =====
+[2026-11-13 13:00:38] 抓取 竞品A (B0C8TG35BF) ...
+[2026-11-13 13:00:38]   [B0C8TG35BF] 第1次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-13 13:00:45]   [B0C8TG35BF] 第2次尝试成功（dp 路径，含BSR）
+[2026-11-13 13:00:45]   → 价格: 29.99 | 原价: 59.99 | 折扣: 50% | 库存: Out of Stock | 大类BSR: {'rank': 3685, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 40, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 2165
+[2026-11-13 13:00:45]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
+[2026-11-13 13:00:50] 抓取 竞品B (B0DJVX1BX6) ...
+[2026-11-13 13:00:50]   [B0DJVX1BX6] 第1次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-13 13:00:57]   [B0DJVX1BX6] 第2次尝试成功（dp 路径，含BSR）
+[2026-11-13 13:00:57]   ⚠ 评论数异常回退 3449 → 3448，判定为页面抖动，沿用旧值
+[2026-11-13 13:00:57]   → 价格: 28.49 | 原价: 29.99 | 折扣: 5% | 库存: Out of Stock | 大类BSR: {'rank': 3874, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 43, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 3449
+[2026-11-13 13:00:57]   → 标题: Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery
+[2026-11-13 13:01:02] ===== 本轮无异常 =====
+[2026-11-13 13:01:02]   推送常规巡检报告（本轮无异常）
+[2026-11-13 13:01:02]   --- 推送配置检查 ---
+[2026-11-13 13:01:02]     FEISHU_WEBHOOK = 已设置
+[2026-11-13 13:01:02]     FEISHU_SECRET  = 已设置
+[2026-11-13 13:01:02]     SERVERCHAN_KEY = (空)
+[2026-11-13 13:01:02]     WEBHOOK_URL    = (空)
+[2026-11-13 13:01:02]     邮件 SMTP      = (空)
+[2026-11-13 13:01:03]   飞书响应: {"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}
+[2026-11-13 13:01:03]   ✓ 飞书推送成功
+[2026-11-13 13:01:03] ===== 监控结束 =====
+
