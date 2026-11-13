@@ -1851,3 +1851,32 @@
 [2026-11-13 13:01:03]   ✓ 飞书推送成功
 [2026-11-13 13:01:03] ===== 监控结束 =====
 
+[2026-11-13 17:00:50] ✅ 定时门控：距上次运行 4.00 小时，已达 3.8 小时周期
+[2026-11-13 17:00:50] ===== 监控开始 (常规监控) =====
+[2026-11-13 17:00:50] 抓取 竞品A (B0C8TG35BF) ...
+[2026-11-13 17:00:50]   [B0C8TG35BF] 第1次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-13 17:00:55]   [B0C8TG35BF] 第2次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-13 17:00:58]   [B0C8TG35BF] 第2次页面有效但缺 BSR（976179字节），继续尝试其他指纹
+[2026-11-13 17:01:06]   [B0C8TG35BF] 第3次无效页面: 长度=305745 标题='' 反爬特征=无
+[2026-11-13 17:01:09]   [B0C8TG35BF] 第3次尝试成功（gp 路径，含BSR）
+[2026-11-13 17:01:09]   → 价格: 29.99 | 原价: 49.99 | 折扣: 40% | 库存: Out of Stock | 大类BSR: {'rank': 3634, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 39, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 2166
+[2026-11-13 17:01:09]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
+[2026-11-13 17:01:09]   ⚠ 预警: [折扣变化] 竞品A(B0C8TG35BF) 折扣减小: 50% → 40% off
+[2026-11-13 17:01:14] 抓取 竞品B (B0DJVX1BX6) ...
+[2026-11-13 17:01:15]   [B0DJVX1BX6] 第1次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-13 17:01:20]   [B0DJVX1BX6] 第2次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-13 17:01:22]   [B0DJVX1BX6] 第2次无效页面: 长度=3781 标题='Amazon.com' 反爬特征=['api-services-support@amazon.com', 'automated access to Amazon data']
+[2026-11-13 17:01:33]   [B0DJVX1BX6] 第3次尝试成功（dp 路径，含BSR）
+[2026-11-13 17:01:33]   → 价格: 28.49 | 原价: 29.99 | 折扣: 5% | 库存: Out of Stock | 大类BSR: {'rank': 3922, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 45, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 3449
+[2026-11-13 17:01:33]   → 标题: Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery
+[2026-11-13 17:01:38] ===== 本轮共 1 条预警 =====
+[2026-11-13 17:01:38]   --- 推送配置检查 ---
+[2026-11-13 17:01:38]     FEISHU_WEBHOOK = 已设置
+[2026-11-13 17:01:38]     FEISHU_SECRET  = 已设置
+[2026-11-13 17:01:38]     SERVERCHAN_KEY = (空)
+[2026-11-13 17:01:38]     WEBHOOK_URL    = (空)
+[2026-11-13 17:01:38]     邮件 SMTP      = (空)
+[2026-11-13 17:01:41]   飞书响应: {"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}
+[2026-11-13 17:01:41]   ✓ 飞书推送成功
+[2026-11-13 17:01:41] ===== 监控结束 =====
+
