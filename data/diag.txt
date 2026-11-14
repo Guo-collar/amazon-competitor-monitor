@@ -1,32 +1,9 @@
-===== 推送配置诊断 2026-11-14 09:00:59 UTC =====
+===== 推送配置诊断 2026-11-14 13:01:00 UTC =====
 FEISHU_WEBHOOK 长度: 81
 FEISHU_SECRET  长度: 22
 FEISHU_WEBHOOK 前缀: https://open.feishu.cn/open-apis
 
 ===== 脚本日志（末40行） =====
-[2026-11-14 13:00:47]   [B0C8TG35BF] 第2次尝试成功（dp 路径，含BSR）
-[2026-11-14 13:00:47]   → 价格: 29.99 | 原价: None | 折扣: 20% | 库存: Out of Stock | 大类BSR: {'rank': 3946, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 41, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 2166
-[2026-11-14 13:00:47]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
-[2026-11-14 13:00:52] 抓取 竞品B (B0DJVX1BX6) ...
-[2026-11-14 13:00:52]   [B0DJVX1BX6] 第1次无效页面: 长度=281106 标题='' 反爬特征=无
-[2026-11-14 13:00:59]   [B0DJVX1BX6] 第2次尝试成功（dp 路径，含BSR）
-[2026-11-14 13:00:59]   → 价格: 28.49 | 原价: 29.99 | 折扣: 5% | 库存: Out of Stock | 大类BSR: {'rank': 3759, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 38, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 3449
-[2026-11-14 13:00:59]   → 标题: Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery
-[2026-11-14 13:01:04] ===== 本轮无异常 =====
-[2026-11-14 13:01:04]   推送常规巡检报告（本轮无异常）
-[2026-11-14 13:01:04]   --- 推送配置检查 ---
-[2026-11-14 13:01:04]     FEISHU_WEBHOOK = 已设置
-[2026-11-14 13:01:04]     FEISHU_SECRET  = 已设置
-[2026-11-14 13:01:04]     SERVERCHAN_KEY = (空)
-[2026-11-14 13:01:04]     WEBHOOK_URL    = (空)
-[2026-11-14 13:01:04]     邮件 SMTP      = (空)
-[2026-11-14 13:01:05]   飞书响应: {"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}
-[2026-11-14 13:01:05]   ✓ 飞书推送成功
-[2026-11-14 13:01:05] ===== 监控结束 =====
-
-[2026-11-14 17:00:44] ✅ 定时门控：距上次运行 3.99 小时，已达 3.8 小时周期
-[2026-11-14 17:00:44] ===== 监控开始 (常规监控) =====
-[2026-11-14 17:00:44] 抓取 竞品A (B0C8TG35BF) ...
 [2026-11-14 17:00:46]   → 价格: 29.99 | 原价: 49.99 | 折扣: 40% | 库存: Out of Stock | 大类BSR: {'rank': 3847, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 42, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 2166
 [2026-11-14 17:00:46]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
 [2026-11-14 17:00:51] 抓取 竞品B (B0DJVX1BX6) ...
@@ -44,5 +21,78 @@ FEISHU_WEBHOOK 前缀: https://open.feishu.cn/open-apis
 [2026-11-14 17:00:59]   ✓ 飞书推送成功
 [2026-11-14 17:00:59] ===== 监控结束 =====
 
+[2026-11-14 21:00:37] ✅ 定时门控：距上次运行 3.99 小时，已达 3.8 小时周期
+[2026-11-14 21:00:37] ===== 监控开始 (常规监控) =====
+[2026-11-14 21:00:37] 抓取 竞品A (B0C8TG35BF) ...
+[2026-11-14 21:00:39]   → 价格: 29.99 | 原价: 53.99 | 折扣: 44% | 库存: Out of Stock | 大类BSR: {'rank': 3844, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 42, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 2166
+[2026-11-14 21:00:39]   → 标题: DownyPaws Cat Water Fountain Cordless, Pet Fountain, 84oz/2.5L, Black Pro
+[2026-11-14 21:00:39]   ⚠ 预警: [折扣变化] 竞品A(B0C8TG35BF) 折扣加大: 40% → 44% off
+[2026-11-14 21:00:44] 抓取 竞品B (B0DJVX1BX6) ...
+[2026-11-14 21:00:44]   [B0DJVX1BX6] 第1次无效页面: 长度=292038 标题='' 反爬特征=无
+[2026-11-14 21:00:50]   [B0DJVX1BX6] 第2次无效页面: 长度=296168 标题='' 反爬特征=无
+[2026-11-14 21:00:54]   [B0DJVX1BX6] 第2次尝试成功（gp 路径，含BSR）
+[2026-11-14 21:00:54]   → 价格: 28.49 | 原价: 29.99 | 折扣: 5% | 库存: Out of Stock | 大类BSR: {'rank': 3811, 'category': 'Pet Supplies'} | 小类BSR: {'rank': 40, 'category': 'Cat Fountains'} | 评分: 4.3 | 评论数: 3450
+[2026-11-14 21:00:54]   → 标题: Cat Water Fountain Wireless,Stainless Steel-Rechargeable- Battery Operated Cat Water Fountain,108oz/ 3.2l Automatic Cordless Pet Fountain,Pet Fountain with 4200 Mah Battery
+[2026-11-14 21:00:59] ===== 本轮共 1 条预警 =====
+[2026-11-14 21:00:59]   --- 推送配置检查 ---
+[2026-11-14 21:00:59]     FEISHU_WEBHOOK = 已设置
+[2026-11-14 21:00:59]     FEISHU_SECRET  = 已设置
+[2026-11-14 21:00:59]     SERVERCHAN_KEY = (空)
+[2026-11-14 21:00:59]     WEBHOOK_URL    = (空)
+[2026-11-14 21:00:59]     邮件 SMTP      = (空)
+[2026-11-14 21:01:00]   飞书响应: {"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}
+[2026-11-14 21:01:00]   ✓ 飞书推送成功
+[2026-11-14 21:01:00] ===== 监控结束 =====
+
 
 ===== 无效页面样本（若抓取失败） =====
+--- data/bad_B0DJVX1BX6.html ---
+<!doctype html><html lang="en-us" class="a-no-js" data-19ax5a9jf="dingo"><!-- sp:feature:head-start -->
+<head><script>var aPageStart = (new Date()).getTime();</script><meta charset="utf-8"/>
+<!-- sp:end-feature:head-start -->
+<!-- sp:feature:csm:head-open-part1 -->
+
+<script type='text/javascript'>var ue_t0=ue_t0||+new Date();</script>
+<!-- sp:end-feature:csm:head-open-part1 -->
+<!-- sp:feature:cs-optimization -->
+<meta http-equiv='x-dns-prefetch-control' content='on'>
+<link rel="preconnect" href="https://images-na.ssl-images-amazon.com" crossorigin>
+<link rel="preconnect" href="https://m.media-amazon.com" crossorigin>
+<!-- sp:end-feature:cs-optimization -->
+<!-- sp:feature:csm:head-open-part2 -->
+<script type='text/javascript'>
+window.ue_ihb = (window.ue_ihb || window.ueinit || 0) + 1;
+if (window.ue_ihb === 1) {
+
+var ue_csm = window,
+    ue_hob = +new Date();
+(function(d){var e=d.ue=d.ue||{},f=Date.now||function(){return+new Date};e.d=function(b){return f()-(b?0:d.ue_t0)};e.stub=function(b,a){if(!b[a]){var c=[];b[a]=function(){c.push([c.slice.call(arguments),e.d(),d.ue_id])};b[a].replay=function(b){for(var a;a=c.shift();)b(a[0],a[1],a[2])};b[a].isStub=1}};e.exec=function(b,a){return function(){try{return b.apply(this,arguments)}catch(c){ueLogError(c,{attribution:a||"undefined",logLevel:"WARN"})}}}})(ue_csm);
+
+
+    var ue_err_chan = 'jserr-rw';
+(function(d,e){function h(f,b){if(!(a.ec>a.mxe)&&f){a.ter.push(f);b=b||{};var c=f.logLevel||b.logLevel;c&&c!==k&&c!==m&&c!==n&&c!==p||a.ec++;c&&c!=k||a.ecf++;b.pageURL=""+(e.location?e.location.href:"");b.logLevel=c;b.attribution=f.attribution||b.attribution;a.erl.push({ex:f,info:b})}}function l(a,b,c,e,g){d.ueLogError({m:a,f:b,l:c,c:""+e,err:g,fromOnError:1,args:arguments},g?{attribution:g.attribution,logLevel:g.logLevel}:void 0);return!1}var k="FATAL",m="ERROR",n="WARN",p="DOWNGRADED",a={ec:0,ecf:0,
+pec:0,ts:0,erl:[],ter:[],buffer:[],mxe:50,startTimer:function(){a.ts++;setInterval(function(){d.ue&&a.pec<a.ec&&d.uex("at");a.pec=a.ec},1E4)}};l.skipTrace=1;h.skipTrace=1;h.isStub=1;d.ueLogError=h;d.ue_err=a;e.onerror=l})(ue_csm,window);
+
+
+var ue_id = 'WNYDWXYH3S4QMJX2A1W9',
+    ue_url = '/rd/uedata',
+    ue_navtiming = 1,
+    ue_mid = 'ATVPDKIKX0DER',
+    ue_sid = '141-4107698-0419947',
+    ue_sn = 'www.amazon.com',
+    ue_furl = 'fls-na.amazon.com',
+    ue_surl = 'https://unagi.amazon.com/1/events/com.amazon.csm.nexusclient.prod',
+    ue_int = 0,
+    ue_fcsn = 1,
+    ue_urt = 3,
+    ue_rpl_ns = 'cel-rpl',
+    ue_ddq =
+--- 关键特征扫描 ---
+含 captcha: 0
+0
+含 productTitle: 0
+0
+含 a-offscreen: 0
+0
+含 $ 价格: 0
+
