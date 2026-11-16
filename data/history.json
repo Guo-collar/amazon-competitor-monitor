@@ -8,7 +8,7 @@
     "discount": 44,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 3851,
+      "rank": 3850,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
@@ -16,8 +16,8 @@
       "category": "Cat Fountains"
     },
     "rating": 4.3,
-    "reviews": 2172,
-    "time": "2026-11-16 21:00:40"
+    "reviews": 2173,
+    "time": "2026-11-17 01:00:42"
   },
   "B0DJVX1BX6": {
     "asin": "B0DJVX1BX6",
@@ -37,6 +37,6 @@
     },
     "rating": 4.2,
     "reviews": 3455,
-    "time": "2026-11-16 21:00:40"
+    "time": "2026-11-17 01:00:42"
   }
 }
