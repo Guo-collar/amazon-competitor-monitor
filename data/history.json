@@ -8,16 +8,16 @@
     "discount": 15,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 4154,
+      "rank": 4584,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
-      "rank": 44,
+      "rank": 49,
       "category": "Cat Fountains"
     },
     "rating": 4.3,
     "reviews": 2175,
-    "time": "2026-11-20 05:00:40"
+    "time": "2026-11-20 09:00:39"
   },
   "B0DJVX1BX6": {
     "asin": "B0DJVX1BX6",
@@ -28,15 +28,15 @@
     "discount": 15,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 4592,
+      "rank": 4895,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
-      "rank": 52,
+      "rank": 54,
       "category": "Cat Fountains"
     },
     "rating": 4.3,
     "reviews": 3459,
-    "time": "2026-11-20 05:00:40"
+    "time": "2026-11-20 09:00:39"
   }
 }
