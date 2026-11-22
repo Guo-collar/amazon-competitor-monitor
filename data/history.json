@@ -8,7 +8,7 @@
     "discount": 15,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 3862,
+      "rank": 3863,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
@@ -17,7 +17,7 @@
     },
     "rating": 4.3,
     "reviews": 2175,
-    "time": "2026-11-22 21:00:39"
+    "time": "2026-11-23 01:00:45"
   },
   "B0DJVX1BX6": {
     "asin": "B0DJVX1BX6",
@@ -28,7 +28,7 @@
     "discount": 15,
     "stock": "Out of Stock",
     "bsr": {
-      "rank": 3633,
+      "rank": 3635,
       "category": "Pet Supplies"
     },
     "sub_bsr": {
@@ -37,6 +37,6 @@
     },
     "rating": 4.2,
     "reviews": 3464,
-    "time": "2026-11-22 21:00:39"
+    "time": "2026-11-23 01:00:45"
   }
 }
