@@ -1,5 +1,5 @@
 {
-  "site": "amazon.com",
+  "marketplace": "US",
   "currency": "USD",
   "asins": [
     {
@@ -24,8 +24,6 @@
     "back_in_stock": true
   },
   "request": {
-    "timeout": 30,
-    "retry": 4,
-    "delay_between_asins": 5
+    "timeout": 30
   }
 }

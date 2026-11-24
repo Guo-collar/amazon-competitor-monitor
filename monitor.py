@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 亚马逊竞争对手监控脚本（云端部署版）
-监控多个 ASIN 的价格、库存、BSR（大类+小类）、评分、评论数变化，异常时预警。
+监控多个 ASIN 的价格、库存（接口提供时）、BSR（大类+小类）、评分和评分数。
+正式数据源仅使用卖家精灵 MCP V2，不回退到亚马逊网页。
 
 用法:
-  python monitor.py            # 常规监控：抓取+对比+预警
-  python monitor.py --init     # 首次运行：仅建立基线不预警
+  python monitor.py             # 取数、对比并生成巡检报告
+  python monitor.py --init      # 仅建立基线，不推送
+  python monitor.py --dry-run   # 取数及预览，不写入文件、不推送
 
 推送方式（可选，按优先级尝试）：
   1. 飞书自定义机器人（推荐，卡片消息）：FEISHU_WEBHOOK（+ 可选 FEISHU_SECRET 签名校验）
@@ -39,14 +41,16 @@ import tempfile
 import smtplib
 import urllib.request
 import urllib.parse
+from pathlib import Path
 from email.mime.text import MIMEText
 from email.header import Header
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 DATA_DIR = os.path.join(BASE_DIR, "data")
-HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
-LAST_RUN_PATH = os.path.join(DATA_DIR, "last_run.json")
+HISTORY_PATH = os.path.join(DATA_DIR, "sellersprite_history.json")
+LAST_RUN_PATH = os.path.join(DATA_DIR, "sellersprite_last_run.json")
+DRY_RUN = "--dry-run" in sys.argv
 ALERTS_PATH = os.path.join(DATA_DIR, "alerts.jsonl")
 LOG_PATH = os.path.join(DATA_DIR, "monitor.log")
 
@@ -67,6 +71,8 @@ def bjnow(fmt="%Y-%m-%d %H:%M:%S"):
 def log(msg):
     line = f"[{bjnow()}] {msg}"
     print(line)
+    if DRY_RUN:
+        return
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(LOG_PATH, "a", encoding="utf-8") as f:
@@ -119,6 +125,7 @@ def load_config():
         return json.load(f)
 
 
+# 旧网页解析函数仅为维护历史记录而保留，正式入口不调用。
 # 浏览器指纹池：UA 必须与 sec-ch-ua / platform 匹配，否则反而更可疑
 _UA_PROFILES = [
     {
@@ -446,6 +453,253 @@ def parse_reviews(html):
     return None
 
 
+SOURCE = "sellersprite_mcp_v2"
+METRIC_SCHEMA = "asin.detail+keepa.trend:competitors:v1"
+MCP_ENDPOINT = "https://mcp.sellersprite.com/v2/mcp"
+DETAIL_FIELDS = ["asin", "marketplace", "title", "price", "currency", "categoryPath",
+                 "bsr", "rating", "reviewCount", "recordUpdatedAt"]
+METRIC_LABELS = {"price": "售价", "stock": "库存", "bsr": "大类 BSR", "sub_bsr": "小类 BSR",
+                 "rating": "星级", "reviews": "评分数"}
+
+
+def sellersprite_secret():
+    secret = os.environ.get("SELLERSPRITE_MCP_SECRET_KEY", "").strip()
+    if secret:
+        return secret
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        try:
+            config = json.loads((Path.home() / ".workbuddy" / "mcp.json").read_text(encoding="utf-8-sig"))
+        except FileNotFoundError:
+            config = {}
+        except (OSError, ValueError):
+            raise RuntimeError("无法读取 WorkBuddy MCP 配置") from None
+        for server in config.get("mcpServers", {}).values():
+            if not isinstance(server, dict) or server.get("url") != MCP_ENDPOINT or server.get("disabled") is True:
+                continue
+            for key, value in (server.get("headers") or {}).items():
+                if key.lower() == "secret-key" and isinstance(value, str) and value.strip():
+                    return value.strip()
+    raise RuntimeError("未配置卖家精灵 MCP V2 密钥（SELLERSPRITE_MCP_SECRET_KEY）")
+
+
+class NoMcpRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class SellerSpriteMcp:
+    def __init__(self, secret, timeout=30):
+        self.secret, self.timeout = secret, timeout
+        self.request_id = 0
+        self.session = self.version = None
+        self.opener = urllib.request.build_opener(NoMcpRedirect())
+
+    def rpc(self, method, params=None, notification=False):
+        message = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            message["params"] = params
+        if not notification:
+            self.request_id += 1
+            message["id"] = self.request_id
+        headers = {"secret-key": self.secret, "Content-Type": "application/json",
+                   "Accept": "application/json, text/event-stream"}
+        if self.session:
+            headers["Mcp-Session-Id"] = self.session
+        if self.version:
+            headers["Mcp-Protocol-Version"] = self.version
+        request = urllib.request.Request(MCP_ENDPOINT, json.dumps(message).encode("utf-8"), headers)
+        try:
+            with self.opener.open(request, timeout=self.timeout) as response:
+                self.session = response.headers.get("Mcp-Session-Id") or self.session
+                if notification:
+                    return None
+                if response.headers.get_content_type() == "text/event-stream":
+                    result, lines = None, []
+                    for raw in response:
+                        line = raw.decode("utf-8").rstrip("\r\n")
+                        if line.startswith("data:"):
+                            lines.append(line[5:].lstrip())
+                        elif not line and lines:
+                            event = json.loads("\n".join(lines))
+                            lines.clear()
+                            if isinstance(event, dict) and event.get("id") == message["id"]:
+                                result = event
+                                break
+                else:
+                    result = json.load(response)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"卖家精灵 MCP {method} 返回 HTTP {exc.code}") from None
+        except (OSError, ValueError):
+            raise RuntimeError(f"卖家精灵 MCP {method} 连接、读取或解析失败") from None
+        if not isinstance(result, dict) or result.get("id") != message["id"] or not isinstance(result.get("result"), dict):
+            raise RuntimeError(f"卖家精灵 MCP {method} 未返回有效响应")
+        return result["result"]
+
+    def initialize(self):
+        result = self.rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
+                                         "clientInfo": {"name": "amazon-competitor-monitor", "version": "1.0.0"}})
+        self.version = result.get("protocolVersion")
+        if not isinstance(self.version, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", self.version):
+            raise RuntimeError("卖家精灵 MCP 握手缺少有效协议版本")
+        self.rpc("notifications/initialized", notification=True)
+
+    def call(self, name, arguments, validate):
+        result = self.rpc("tools/call", {"name": name, "arguments": arguments})
+        if not result.get("isError"):
+            data = result.get("structuredContent")
+            if isinstance(data, dict) and validate(data):
+                return data
+            for part in result.get("content") or []:
+                if not isinstance(part, dict) or part.get("type") != "text":
+                    continue
+                try:
+                    data = json.loads(part.get("text", ""))
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(data, dict) and validate(data):
+                    return data
+        raise RuntimeError(f"卖家精灵 {name} 未返回可用数据（请检查权限、额度或接口状态）")
+
+
+def valid_number(value, minimum=0, maximum=float("inf")):
+    return type(value) in (float, int) and minimum <= value < maximum
+
+
+def valid_rank(value):
+    return valid_number(value, 1) and value == int(value)
+
+
+def detail_time(value):
+    # 保留接口原始时区口径，不猜测无时区标记的时间。
+    if isinstance(value, str):
+        try:
+            return datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S").isoformat(sep=" ")
+        except ValueError:
+            pass
+    return None
+
+
+def newest_subrank(trend, asin, now):
+    if trend.get("asin") != asin or trend.get("dataAsin") != asin:
+        return None, None
+    ids = str(trend.get("nodeIdPath") or "").split(":")
+    labels = str(trend.get("nodeLabelPath") or "").split(":")
+    if len(ids) < 2 or not ids[-1].isdigit():
+        return None, None
+    ranks, times = trend["series"].get(f"subSalesRank:{ids[-1]}"), trend["ts"]
+    if not isinstance(ranks, list) or len(ranks) != len(times):
+        return None, None
+    lo, hi = (now - datetime.timedelta(days=7)).timestamp(), now.timestamp()
+    points = [(ts, val) for ts, val in zip(times, ranks)
+              if type(ts) is int and lo <= ts <= hi and valid_rank(val)]
+    if not points:
+        return None, None
+    ts, rank = max(points, key=lambda p: p[0])
+    time_utc = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).isoformat()
+    return {"rank": int(rank), "category": labels[-1], "node_id": ids[-1]}, time_utc
+
+
+def seller_snapshots(config, now):
+    market = config["marketplace"]
+    asins = [item["asin"] for item in config["asins"]]
+    client = SellerSpriteMcp(sellersprite_secret(), config.get("request", {}).get("timeout", 30))
+    client.initialize()
+    by_asin, detail_error = {}, None
+    try:
+        details = client.call("asin.detail", {"marketplace": market, "asins": asins, "includeFields": DETAIL_FIELDS},
+                              lambda d: isinstance(d.get("items"), list))
+        by_asin = {row.get("asin"): row for row in details["items"] if isinstance(row, dict)
+                   and row.get("marketplace") == market and row.get("resultStatus") == "success"}
+    except RuntimeError as exc:
+        detail_error = str(exc)
+    start = (now - datetime.timedelta(days=7)).date().isoformat()
+    end = now.date().isoformat()
+    for info in config["asins"]:
+        asin = info["asin"]
+        row = by_asin.get(asin, {})
+        issues = [] if row else [detail_error or "商品详情未返回有效记录"]
+        try:
+            trend = client.call("keepa.trend", {"marketplace": market, "asin": asin,
+                                "metrics": ["subSalesRank"], "dateRange": {"startDate": start, "endDate": end}},
+                                lambda d: d.get("asin") == asin and isinstance(d.get("ts"), list)
+                                and isinstance(d.get("series"), dict))
+            sub, sub_time = newest_subrank(trend, asin, now)
+            if sub is None:
+                issues.append("近 7 天未返回该 ASIN 的有效小类 BSR")
+        except RuntimeError as exc:
+            sub, sub_time = None, None
+            issues.append(str(exc))
+        price, rating, reviews = row.get("price"), row.get("rating"), row.get("reviewCount")
+        currency = row.get("currency")
+        category_path = row.get("categoryPath")
+        category = category_path[0] if isinstance(category_path, list) and category_path else None
+        rank = row.get("bsr")
+        stamp = detail_time(row.get("recordUpdatedAt"))
+        data = {
+            "source": SOURCE, "schema": METRIC_SCHEMA, "marketplace": market, "currency": currency,
+            "asin": asin, "name": info["name"], "title": row.get("title"),
+            "price": round(price, 2) if valid_number(price, 0.01) and currency == config["currency"] else None,
+            "stock": None,  # MCP V2 的已验证接口未提供库存状态；禁止由价格、购物车或卖家数推断。
+            "bsr": {"rank": int(rank), "category": category} if isinstance(category, str) and category and valid_rank(rank) else None,
+            "sub_bsr": sub, "rating": round(rating, 1) if valid_number(rating, 0.1, 5.001) else None,
+            "reviews": reviews if type(reviews) is int and reviews >= 0 else None,
+            "source_times": {"price": stamp, "bsr": stamp, "sub_bsr": sub_time,
+                             "rating": stamp, "reviews": stamp, "stock": None},
+        }
+        missing = [METRIC_LABELS[k] for k in ("price", "bsr", "rating", "reviews") if data[k] is None]
+        if row and (missing or stamp is None):
+            issues.append("商品详情缺少" + "、".join(missing + ([] if stamp else ["有效数据时间"])))
+        yield info, data, issues
+
+
+def metric_scope(data, key):
+    if key == "price":
+        return data.get("currency")
+    if key == "bsr":
+        return (data.get(key) or {}).get("category")
+    if key == "sub_bsr":
+        return (data.get(key) or {}).get("node_id")
+    return key
+
+
+def advance_baseline(current, previous):
+    identity = ("source", "schema", "marketplace", "asin")
+    matches = isinstance(previous, dict) and all(previous.get(k) == current[k] for k in identity)
+    old = previous if matches else {}
+    new_baseline = {**current, "source_times": dict(current["source_times"])}
+    comparable, status = {}, {}
+    for key in METRIC_LABELS:
+        ts, last_ts = current["source_times"].get(key), (old.get("source_times") or {}).get(key)
+        value, past = current.get(key), old.get(key)
+        if value is None or not ts or (last_ts and ts <= last_ts):
+            new_baseline[key] = past if last_ts else None
+            new_baseline["source_times"][key] = last_ts
+            if key == "price" and past is not None and last_ts:
+                new_baseline["currency"] = old.get("currency")
+            status[key] = ("未知（接口未提供）" if value is None else "无源时间" if not ts else
+                           "源快照未更新" if ts == last_ts else "源快照早于基线")
+        elif past is None or not last_ts:
+            status[key] = "建立基线"
+        elif metric_scope(current, key) != metric_scope(old, key):
+            status[key] = "口径变更，重建基线"
+        else:
+            comparable[key] = past
+            if key.endswith("bsr"):
+                before, after = past["rank"], value["rank"]
+                diff = before - after
+                status[key] = (f"#{before:,} → #{after:,}（{'提升' if diff > 0 else '下滑'} {abs(diff):,} 位）"
+                               if diff else "持平")
+            elif key == "price":
+                status[key] = f"${past:.2f} → ${value:.2f}（{value - past:+.2f} USD / {(value - past) / past:+.1%}）" if value != past else "持平"
+            elif key == "rating":
+                status[key] = f"{past:.1f} → {value:.1f} 星（{value - past:+.1f}）" if value != past else "持平"
+            elif key == "stock":
+                status[key] = f"{past} → {value}" if value != past else "持平"
+            else:
+                status[key] = f"{past:,} → {value:,}（{value - past:+,}）" if value != past else "持平"
+    return new_baseline, comparable, status
+
+
 def load_history():
     """优先从环境变量 HISTORY_STATE 读取（云端），否则读本地文件"""
     env_state = os.environ.get("HISTORY_STATE", "").strip()
@@ -462,8 +716,10 @@ def load_history():
 
 def save_history(history):
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=DATA_DIR, delete=False) as f:
+        temporary_path = f.name
         json.dump(history, f, ensure_ascii=False, indent=2)
+    os.replace(temporary_path, HISTORY_PATH)
     # 云端无状态环境：输出快照供下次通过环境变量回传
     if os.environ.get("OUTPUT_STATE") == "1":
         print("\n===HISTORY_STATE_BEGIN===")
@@ -533,25 +789,21 @@ def _fmt_snapshot(snapshot):
     """把本轮抓取数据格式化为卡片文本行"""
     lines = []
     for d in snapshot or []:
-        price = f"${d['price']}" if d.get("price") is not None else "—"
-        disc = f" ({d['discount']}% off)" if d.get("discount") else ""
-        stock = d.get("stock") or "—"
-        if "Out of Stock" in stock:
-            stock_txt = "🚨售罄"
-        elif "In Stock" in stock:
-            stock_txt = "✅有货"
-        else:
-            stock_txt = stock
-        sub = (d.get("sub_bsr") or {}).get("rank")
-        sub_txt = f"#{sub}" if sub else "—"
-        big = (d.get("bsr") or {}).get("rank")
-        big_txt = f"#{big:,}" if big else "—"
-        rating = f"{d['rating']}★" if d.get("rating") is not None else "—"
-        reviews = f"{d['reviews']:,}" if d.get("reviews") is not None else "—"
-        lines.append(
-            f"**{d.get('name', '')}** ({d.get('asin', '')})\n"
-            f"{price}{disc} · {stock_txt} · 小类 {sub_txt} / 大类 {big_txt} · {rating} · {reviews} 评"
-        )
+        big, sub = d.get("bsr") or {}, d.get("sub_bsr") or {}
+        values = {
+            "price": f"${d['price']:.2f}" if d.get("price") is not None else "—",
+            "stock": d.get("stock") or "未知（卖家精灵未提供）",
+            "bsr": f"{big['category']} #{big['rank']:,}" if big else "—",
+            "sub_bsr": f"{sub['category']} #{sub['rank']:,}" if sub else "—",
+            "rating": f"{d['rating']:.1f} 星" if d.get("rating") is not None else "—",
+            "reviews": f"{d['reviews']:,}" if d.get("reviews") is not None else "—",
+        }
+        statuses = d.get("status") or {}
+        summary = [f"{METRIC_LABELS[k]}：{value}" + (f"（{statuses[k]}）" if k in statuses and k != "stock" else "")
+                   for k, value in values.items()]
+        stamps = d.get("source_times") or {}
+        lines.append(f"**{d['name']}** ({d['asin']}) · 卖家精灵 MCP V2\n" + " · ".join(summary)
+                     + f"\n详情时间（接口原值）：{stamps.get('price') or '—'} / 小类 BSR 时间（UTC）：{stamps.get('sub_bsr') or '—'}")
     return lines
 
 
@@ -574,11 +826,14 @@ def send_feishu(alerts, snapshot=None):
             title = f"⚠️ 竞品预警 {len(alerts)} 条"
             serious = any(
                 k in a.get("type", "") for a in alerts
-                for k in ("售罄", "回货", "抓取异常")
+                for k in ("售罄", "回货", "取数异常")
             )
             template = "red" if serious else "orange"
+        elif any((d.get("status") or {}).get("price") == "建立基线" for d in snapshot or []):
+            title = "竞品巡检 · 建立卖家精灵基线"
+            template = "blue"
         else:
-            title = "✅ 竞品巡检正常"
+            title = "竞品巡检 · 可比较指标未触发预警"
             template = "green"
 
         elements = []
@@ -655,21 +910,19 @@ def send_feishu(alerts, snapshot=None):
         req.add_header("Content-Type", "application/json; charset=utf-8")
         with urllib.request.urlopen(req, timeout=30) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
-        log(f"  飞书响应: {body[:300]}")
-
-        # 严格判断返回码（飞书报错时也是非空 JSON，不能只看非空）
+        # 只记录结果，不把第三方响应体或消息内容写入公开的 Actions 日志。
         try:
             rj = json.loads(body)
-        except Exception:
+        except ValueError:
             rj = {}
-        code = rj.get("code", rj.get("StatusCode"))
-        if code == 0:
-            log("  ✓ 飞书推送成功")
+        code = rj.get("code", rj.get("StatusCode")) if isinstance(rj, dict) else None
+        if type(code) is int and code == 0:
+            log("飞书推送成功")
             return True
-        log(f"  ✗ 飞书推送失败（code={code}, msg={rj.get('msg') or rj.get('StatusMessage')}）")
+        log(f"飞书推送失败（返回码：{code if type(code) is int else '无有效返回码'}）")
         return False
     except Exception as e:
-        log(f"  ✗ 飞书推送异常: {type(e).__name__}: {e}")
+        log(f"飞书推送异常：{type(e).__name__}")
         return False
 
 
@@ -725,7 +978,7 @@ def send_notification(alerts, config, snapshot=None):
     log(f"    邮件 SMTP      = {'已设置' if has_smtp else '(空)'}")
 
     # 非飞书渠道不支持快照卡片，无异常时补一条占位说明
-    plain_alerts = alerts or [{"type": "巡检正常", "detail": "本轮所有竞品指标无异常变化"}]
+    plain_alerts = alerts or [{"type": "巡检报告", "detail": "可比较指标未触发预警。\n" + "\n".join(_fmt_snapshot(snapshot))}]
 
     if has_feishu:
         r = send_feishu(alerts, snapshot)
@@ -823,7 +1076,7 @@ def compare_and_alert(asin_info, old, new):
     old_price = old.get("price") if old else None
     new_price = new.get("price")
     if old_price is not None and new_price is not None and old_price != new_price:
-        diff = new_price - old_price
+        diff = round(new_price - old_price, 2)
         pct = diff / old_price * 100
         if abs(diff) >= rules["price_change_threshold_usd"] or abs(pct) >= rules["price_change_threshold_pct"]:
             direction = "上涨" if diff > 0 else "下降"
@@ -831,9 +1084,9 @@ def compare_and_alert(asin_info, old, new):
 
     old_stock = old.get("stock") if old else None
     new_stock = new.get("stock")
-    if rules["stock_change"] and old_stock and old_stock != new_stock:
+    if old_stock and new_stock and rules["stock_change"] and old_stock != new_stock:
         alerts.append({"type": "库存变化", "detail": f"{name}({asin}) 库存变化: '{old_stock}' → '{new_stock}'"})
-    if rules["out_of_stock"] and old_stock != "Out of Stock" and new_stock == "Out of Stock":
+    if rules["out_of_stock"] and old_stock and old_stock != "Out of Stock" and new_stock == "Out of Stock":
         alerts.append({"type": "售罄预警", "detail": f"{name}({asin}) 已售罄 (Out of Stock)!"})
     if rules["back_in_stock"] and old_stock == "Out of Stock" and new_stock and new_stock != "Out of Stock":
         alerts.append({"type": "回货预警", "detail": f"{name}({asin}) 已回货: {new_stock}"})
@@ -859,7 +1112,7 @@ def compare_and_alert(asin_info, old, new):
 
     old_rating = old.get("rating") if old else None
     new_rating = new.get("rating")
-    if old_rating is not None and new_rating is not None and abs(new_rating - old_rating) >= 0.1:
+    if old_rating is not None and new_rating is not None and abs(round(new_rating - old_rating, 1)) >= 0.1:
         direction = "上升" if new_rating > old_rating else "下降"
         alerts.append({"type": "评分变化", "detail": f"{name}({asin}) 评分{direction}: {old_rating} → {new_rating} 星"})
 
@@ -867,160 +1120,78 @@ def compare_and_alert(asin_info, old, new):
     new_reviews = new.get("reviews")
     if old_reviews and new_reviews and old_reviews > 0:
         growth_pct = (new_reviews - old_reviews) / old_reviews * 100
-        # 上限保护：单轮暴涨 >150% 基本是页面抓到别的变体，不预警
-        if growth_pct >= 20 and growth_pct <= 150:
-            alerts.append({"type": "评论激增", "detail": f"{name}({asin}) 评论数快速增长: {old_reviews} → {new_reviews} ({growth_pct:+.1f}%)"})
-
-    old_discount = old.get("discount") if old else None
-    new_discount = new.get("discount")
-    # 折扣是派生值，只有新旧的划线原价都可信时才比较，否则容易因解析漂移误报
-    price_ok = new.get("list_price") is not None and (old.get("list_price") is not None if old else True)
-    if price_ok and new_discount is not None and old_discount != new_discount:
-        if old_discount is None:
-            alerts.append({"type": "促销上线", "detail": f"{name}({asin}) 新增折扣: {new_discount}% off (现价 ${new.get('price')}, 原价 ${new.get('list_price')})"})
-        else:
-            direction = "加大" if new_discount > old_discount else "减小"
-            alerts.append({"type": "折扣变化", "detail": f"{name}({asin}) 折扣{direction}: {old_discount}% → {new_discount}% off"})
-    elif price_ok and new_discount is None and old_discount is not None:
-        alerts.append({"type": "促销结束", "detail": f"{name}({asin}) 折扣已取消 (原 {old_discount}% off)"})
+        if abs(growth_pct) > 150:
+            alerts.append({"type": "评分数口径待核查", "detail": f"{name}({asin}) 卖家精灵评分数变化: {old_reviews:,} → {new_reviews:,}（{growth_pct:+.1f}%），不等同于实际新增或删除评价。"})
+        elif growth_pct >= 20:
+            alerts.append({"type": "评分数激增", "detail": f"{name}({asin}) 评分数快速增长: {old_reviews:,} → {new_reviews:,} ({growth_pct:+.1f}%)"})
 
     return alerts
 
 
 def main():
     init_mode = "--init" in sys.argv
+    dry_run = DRY_RUN
     scheduled_mode = "--scheduled" in sys.argv or os.environ.get("SCHEDULED_MODE") == "1"
     test_email_mode = "--test-email" in sys.argv or os.environ.get("TEST_EMAIL") == "1"
-    os.makedirs(DATA_DIR, exist_ok=True)
+    if not dry_run:
+        os.makedirs(DATA_DIR, exist_ok=True)
 
-    # 定时门控：外部定时器每 30 分钟唤醒，只有到达设定周期才真正抓取
-    if scheduled_mode:
+    if scheduled_mode and not dry_run:
         should_run, reason = schedule_gate()
         if not should_run:
             log(f"⏭ 定时门控：{reason}")
             return
         log(f"✅ 定时门控：{reason}")
 
-    # 标记"本轮真的执行了"，供 workflow 判断是否提交快照与诊断（跳过的轮次不提交，避免刷屏 commit）
-    try:
-        with open(os.path.join(DATA_DIR, ".ran"), "w", encoding="utf-8") as f:
-            f.write(bjnow())
-    except Exception:
-        pass
+    if not dry_run:
+        Path(DATA_DIR, ".ran").write_text(bjnow(), encoding="utf-8")
 
     config = load_config()
-    log(f"===== 监控开始 ({'初始化基线' if init_mode else '常规监控'}{' + 测试邮件' if test_email_mode else ''}) =====")
+    log(f"===== 卖家精灵 MCP V2 · {'初始化基线' if init_mode else '竞品巡检'} =====")
 
     # 仅测试推送：不抓取，直接发一条测试通知
-    if test_email_mode and "--init" not in sys.argv and os.environ.get("TEST_EMAIL_ONLY") == "1":
+    if test_email_mode and not init_mode and not dry_run and os.environ.get("TEST_EMAIL_ONLY") == "1":
         ok = send_notification([{"type": "测试", "detail": "仅测试推送模式，未执行抓取。收到即代表配置成功。"}], config)
         log(f"测试通知{'发送成功' if ok else '发送失败'}")
         return
 
     history = load_history()
-    now = bjnow()
-    all_alerts = []
-    failed_asins = []
-    snapshot = []
-
-    for asin_info in config["asins"]:
-        asin = asin_info["asin"]
-        name = asin_info["name"]
-        log(f"抓取 {name} ({asin}) ...")
-        try:
-            html = fetch_page(asin, config)
-            cur_price = parse_price(html)
-            # 校验：正常商品页必有价格。解析不到价格说明拿到的是验证页/异常页（反爬拦截）
-            if cur_price is None:
-                raise ValueError(f"页面未解析到价格（长度 {len(html)} 字节），疑似被反爬拦截或页面改版")
-            lst_price = parse_list_price(html, cur_price)
-            # 折扣优先按价格自算（页面上的 "N% off" 可能来自其他商品）
-            if cur_price and lst_price and lst_price > cur_price:
-                calc_discount = round((lst_price - cur_price) / lst_price * 100)
-            else:
-                calc_discount = parse_discount(html)
-
-            new_data = {
-                "asin": asin,
-                "name": name,
-                "title": parse_title(html),
-                "price": cur_price,
-                "list_price": lst_price,
-                "discount": calc_discount,
-                "stock": parse_stock(html),
-                "bsr": parse_bsr(html),
-                "sub_bsr": parse_sub_bsr(html),
-                "rating": parse_rating(html),
-                "reviews": parse_reviews(html),
-                "time": now,
-            }
-            # 评论数只增不减：若比基线变小，视为页面解析抖动，保留旧值不覆盖
-            old_data = history.get(asin)
-            if old_data and new_data["reviews"] and old_data.get("reviews"):
-                if new_data["reviews"] < old_data["reviews"]:
-                    log(f"  ⚠ 评论数异常回退 {old_data['reviews']} → {new_data['reviews']}，判定为页面抖动，沿用旧值")
-                    new_data["reviews"] = old_data["reviews"]
-
-            # BSR 缺失处理：页面可能被降级为精简版（有价格、无 Best Sellers Rank 表格）
-            # 此时沿用旧值，避免基线被写成 None、也避免空值继续向下游传播
-            if new_data["bsr"] is None or new_data["sub_bsr"] is None:
-                log(f"  ⚠ BSR 未解析到: {diagnose_bsr(html)[:400]}")
-                if old_data:
-                    if new_data["bsr"] is None and isinstance(old_data.get("bsr"), dict):
-                        log(f"     → 大类BSR 沿用旧值 #{old_data['bsr'].get('rank')}")
-                        new_data["bsr"] = old_data["bsr"]
-                    if new_data["sub_bsr"] is None and isinstance(old_data.get("sub_bsr"), dict):
-                        log(f"     → 小类BSR 沿用旧值 #{old_data['sub_bsr'].get('rank')}")
-                        new_data["sub_bsr"] = old_data["sub_bsr"]
-                else:
-                    log("     → 无历史基线可沿用，BSR 留空")
-            log(f"  → 价格: {new_data['price']} | 原价: {new_data['list_price']} | 折扣: {new_data['discount']}% | 库存: {new_data['stock']} | 大类BSR: {new_data['bsr']} | 小类BSR: {new_data['sub_bsr']} | 评分: {new_data['rating']} | 评论数: {new_data['reviews']}")
-            log(f"  → 标题: {new_data['title']}")
-
-            if not init_mode and old_data:
-                alerts = compare_and_alert(asin_info, old_data, new_data)
-                all_alerts.extend(alerts)
-                for a in alerts:
-                    log(f"  ⚠ 预警: [{a['type']}] {a['detail']}")
-
-            history[asin] = new_data
-            snapshot.append(new_data)
-            time.sleep(config["request"].get("delay_between_asins", 5))
-        except Exception as e:
-            failed_asins.append(f"{name}({asin})")
-            log(f"  ✗ {name} ({asin}) 抓取异常: {e}")
-
-    # 抓取失败必须告警，否则反爬拦截会导致静默失效（用户以为"没消息=正常"）
-    if failed_asins:
-        total = len(config["asins"])
-        if len(failed_asins) == total:
-            detail = f"全部 {total} 个竞品抓取失败，本轮监控失效，需检查：{'、'.join(failed_asins)}"
-        else:
-            detail = f"{len(failed_asins)}/{total} 个竞品抓取失败：{'、'.join(failed_asins)}"
-        all_alerts.append({"type": "抓取异常", "detail": detail})
-        log(f"  ⚠ 预警: [抓取异常] {detail}")
-
-    save_history(history)
-
-    if all_alerts:
-        for a in all_alerts:
-            append_alert({"time": now, **a})
-        log(f"===== 本轮共 {len(all_alerts)} 条预警 =====")
-        send_notification(all_alerts, config, snapshot)
-    else:
-        log("===== 本轮无异常 =====")
-        if init_mode:
-            log("  初始化基线模式，不推送巡检报告")
-        elif test_email_mode:
-            log("  测试模式：发送测试通知验证推送链路")
-            send_notification([{"type": "测试", "detail": "这是一条测试通知，用于验证预警推送链路是否正常。收到即代表配置成功。"}], config, snapshot)
-        else:
-            # 用户要求：无论有无变化，每轮都推巡检报告
-            log("  推送常规巡检报告（本轮无异常）")
-            send_notification([], config, snapshot)
-    log("===== 监控结束 =====\n")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    all_alerts, snapshot = [], []
+    updates = {}
+    try:
+        for info, data, issues in seller_snapshots(config, now):
+            asin = info["asin"]
+            snapshot.append(data)
+            baseline, comparable, status = advance_baseline(data, history.get(asin))
+            data["status"] = status
+            if any(baseline["source_times"].values()):
+                updates[asin] = baseline
+            log("\n".join(_fmt_snapshot([data])))
+            if issues:
+                all_alerts.append({"type": "取数异常", "detail": f"{info['name']} ({asin})：{'；'.join(issues)}"})
+            if not init_mode:
+                valid_current = {key: data[key] for key in comparable}
+                all_alerts.extend(compare_and_alert(info, comparable, valid_current))
+    except RuntimeError as exc:
+        all_alerts.append({"type": "取数异常", "detail": str(exc)})
+    for alert in all_alerts:
+        log(f"预警 [{alert['type']}] {alert['detail']}")
+        if not dry_run:
+            append_alert({"time": bjnow(), "source": SOURCE, **alert})
+    if dry_run:
+        return 0 if any(any(d["source_times"].values()) for d in snapshot) and not any(a["type"] == "取数异常" for a in all_alerts) else 1
+    if updates:
+        # 本轮只更新有有效数据时间的同源记录；旧网页历史另存，绝不用于比较。
+        save_history({**history, **updates})
+    notified = init_mode or send_notification(all_alerts, config, snapshot)
+    log(f"===== 监控结束：{len(all_alerts)} 条预警 =====")
     mark_run()
+    if os.environ.get("GITHUB_ACTIONS") == "true" and not notified:
+        log("云端通知发送失败；保留本轮有效基线，请检查通知配置。")
+        return 1
+    return 0 if updates and not any(a["type"] == "取数异常" for a in all_alerts) else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

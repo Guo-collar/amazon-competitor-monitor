@@ -1,6 +1,8 @@
-# 数据目录（history.json 需提交以持久化历史快照）
+# Latest snapshots persist between cloud runs.
 data/*
 !data/history.json
+!data/sellersprite_history.json
+!data/sellersprite_last_run.json
 !data/last_run.json
 !data/.gitkeep
 

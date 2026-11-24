@@ -1,84 +1,38 @@
-# 亚马逊竞品监控（云端部署版）
+# 亚马逊竞品监控
 
-监控竞争对手 ASIN 的价格、库存、BSR 排名、评分、评论数变化，异常时预警。基于 GitHub Actions 定时运行，**关机也能持续监控**。
+监控亚马逊美国站两款宠物饮水机，唯一数据源为卖家精灵 MCP V2。保存同口径基线，在每轮巡检中报告变化，达到阈值时预警。
 
-## 监控对象
+| 竞品 | ASIN | 商品 |
+|---|---|---|
+| A | B0C8TG35BF | DownyPaws 无线饮水机，84 oz / 2.5 L |
+| B | B0DJVX1BX6 | NautyPaws 无线不锈钢饮水机，108 oz / 3.2 L |
 
-| 名称 | ASIN | 产品 |
-|------|------|------|
-| 竞品A | B0C8TG35BF | DownyPaws 宠物饮水机 84oz/2.5L |
-| 竞品B | B0DJVX1BX6 | 无线不锈钢宠物饮水机 108oz/3.2L |
+## 取数和对比口径
 
-## 监控维度
+- 商品详情 `asin.detail`：美元售价、Pet Supplies 大类 BSR、平均星级、评分数 `reviewCount`、接口更新时间。
+- 趋势 `keepa.trend`：取同一 ASIN 及小类节点的近期最新有效小类 BSR；报告标注其独立采样时间。
+- 已验证的 V2 接口未返回库存状态，报告为未知，不用价格、购物车、卖家数量推断，也不触发售罄或回货预警。V2 快照不是实时抓取结果。
+- 仅比较来源、站点、ASIN、指标口径一致且时间更新的数据。首次有效数据建立基线；同一数据点不重复预警；缺失不覆盖有效基线，不用旧值填本轮报告。币种或类目变化不跨口径比较。
+- 预警：价格变化至少 $0.50 或 3%；大类 BSR 至少 20%；小类 BSR 至少 15% 或 3 位；星级至少 0.1。评分数增长至少 20% 提醒；单次暴涨超过 150% 标为口径待核查，不视作真实新增评价。价格及 BSR 阈值可在 `config.json` 调整。
 
-价格、划线原价/折扣、库存状态、大类 BSR、小类 BSR、评分、评论数。
+## 本地运行
 
-## 预警规则（config.json 可调）
-
-- 价格变动 ≥ $0.5 或 3%
-- 促销/折扣变化（上线、力度变化、结束）
-- 库存变化 / 售罄 / 回货
-- 大类 BSR 变化 ≥ 20%
-- 小类 BSR 变化 ≥ 15% 或名次变化 ≥3
-- 评分变化 ≥ 0.1 星
-- 评论数激增 ≥ 20%
-
-## 部署步骤（GitHub Actions）
-
-### 1. 创建 GitHub 仓库并推送代码
+本地优先使用环境变量 `SELLERSPRITE_MCP_SECRET_KEY`，没有时复用 WorkBuddy 已配置的 V2 连接。不打印密钥，也不将密钥写入项目文件。
 
 ```bash
-cd "D:/桌面/Workbuddy (3)/亚马逊/监控竞争对手"
-git init
-git add .
-git commit -m "init: 亚马逊竞品监控"
-git branch -M main
-git remote add origin https://github.com/<你的用户名>/<仓库名>.git
-git push -u origin main
+python monitor.py --dry-run  # 真实取数并预览，不写文件、不推送
+python monitor.py --init     # 保存卖家精灵基线，不推送
+python monitor.py            # 巡检、记录并按既有配置推送
 ```
 
-> 仓库名随意，例如 `amazon-competitor-monitor`。仓库可以是私有的（Private），更安全。
+- `data/sellersprite_history.json`：卖家精灵独立基线；旧 `data/history.json` 原样保留，不参与对比。
+- `data/sellersprite_last_run.json`：云端定时门控。
+- `data/monitor.log` 和 `data/alerts.jsonl`：当前运行环境的日志和预警记录；云端执行日志见 Actions 页面。
 
-### 2. 配置邮件预警（可选）
+## GitHub Actions 部署
 
-在 GitHub 仓库页 `Settings → Secrets and variables → Actions → New repository secret` 添加以下 Secrets：
+1. 在仓库 `Settings → Secrets and variables → Actions` 添加 `SELLERSPRITE_MCP_SECRET_KEY`。云端不读取本机配置。飞书通知沿用 `FEISHU_WEBHOOK` 及可选 `FEISHU_SECRET`；原有其他通知配置仍可作为备选。
+2. 将更新后的 `monitor.py`、`config.json`、`.gitignore` 和 `.github/workflows/monitor.yml` 推送到目标分支。不要提交密钥。
+3. 在 Actions 手动选择 `force` 试跑一次。确认日志以「卖家精灵 MCP V2」开头，且仓库产生 `data/sellersprite_history.json`。工作流保留约每 4 小时的门控和现有触发方式。
 
-| Secret 名称 | 说明 | 示例 |
-|------------|------|------|
-| `SMTP_HOST` | SMTP 服务器 | `smtp.qq.com` |
-| `SMTP_PORT` | 端口（465=SSL，587=STARTTLS） | `465` |
-| `SMTP_USER` | 发件邮箱 | `you@qq.com` |
-| `SMTP_PASS` | SMTP 授权码（非登录密码） | `xxxxxxxx` |
-| `ALERT_TO` | 收件邮箱 | `you@qq.com` |
-
-> **如何获取 SMTP 授权码**（以 QQ 邮箱为例）：设置 → 账户 → 开启 SMTP 服务 → 生成授权码。
-> 不配置 Secrets 也能运行，只是异常时不会发邮件，预警记录会保存在仓库 `data/alerts.jsonl` 里。
-
-### 3. 启用定时任务
-
-定时由 Cloudflare Worker 外部闹钟驱动（GitHub 自带的 cron 对部分仓库不调度，详见 `cron-trigger/README.md`），每 4 小时运行一次并推送巡检报告。
-
-也可以在仓库 `Actions` 页手动点「Run workflow」立即测试一次。
-
-### 4. 查看运行结果
-
-- 仓库 `Actions` 页查看每次运行日志
-- `data/history.json` — 最新数据快照（自动提交回仓库，实现历史持久化）
-- `data/alerts.jsonl` — 预警记录
-
-## 技术要点
-
-- 用 `curl` 抓取（Python urllib/requests 会被亚马逊反爬拦截）
-- `i18n-prefs=USD` cookie 确保返回美元价格
-- 历史快照通过 commit 回仓库实现跨运行持久化（GitHub runner 无状态）
-
-## 常见问题
-
-**Q: 为什么用 GitHub Actions 免费额度够吗？**
-A: 私有仓库每月 2000 分钟，本项目每 4 小时真跑 1 次、每次约 1 分钟，每月约 180 分钟，完全够用。
-
-**Q: 亚马逊会不会封 IP？**
-A: 每 4 小时才抓 2 个页面，频率极低，风险很小。如需调整间隔，改 `monitor.py` 顶部 `SCHEDULE_INTERVAL_HOURS` 与 `SCHEDULE_GATE_HOURS`（后者固定为前者减 0.2）。
-
-**Q: 想加新竞品？**
-A: 编辑 `config.json` 的 `asins` 数组，添加 `{"asin": "xxx", "name": "竞品C"}` 即可。
+若 WorkBuddy 定时任务与 GitHub Actions 都向同一个飞书群发送报告，建议只保留一套竞品推送，避免重复通知。

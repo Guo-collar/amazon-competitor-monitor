@@ -2,40 +2,36 @@ name: 亚马逊竞品监控
 
 on:
   schedule:
-    # 每 15 分钟唤醒一次做"探测"，由脚本内部的 4 小时门控决定是否真正抓取。
-    # 原因：GitHub 的 cron 不保证准时——整点排队常延迟 5~30 分钟，高负载时整轮可能被丢弃。
-    # 直接写定时 cron 会导致推送时有时无，无法做到"每 4 小时必达"。
     - cron: "*/15 * * * *"
-  workflow_dispatch: # 手动触发。默认同样受 4 小时门控约束，需要立刻跑请勾选 force
+  workflow_dispatch:
     inputs:
       force:
         description: "强制执行一次（忽略 4 小时门控）"
-        required: false
         type: boolean
         default: false
       test_email:
-        description: "只发测试通知（不抓取，仅验证推送配置）"
-        required: false
+        description: "只发测试通知（不取数）"
         type: boolean
         default: false
 
+concurrency:
+  group: competitor-monitor-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write # 允许提交历史快照回仓库
+  contents: write
 
 jobs:
   monitor:
     runs-on: ubuntu-24.04
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v5
-
-      - name: 设置 Python
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
-      - name: 运行监控脚本
+      - name: 卖家精灵 MCP V2 巡检
         env:
+          SELLERSPRITE_MCP_SECRET_KEY: ${{ secrets.SELLERSPRITE_MCP_SECRET_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
@@ -46,58 +42,25 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           ALERT_TO: ${{ secrets.ALERT_TO }}
           TEST_EMAIL_ONLY: ${{ inputs.test_email == true && '1' || '0' }}
+          FORCE: ${{ inputs.force == true && '1' || '0' }}
         run: |
           if [ "$TEST_EMAIL_ONLY" = "1" ]; then
-            echo "=== 仅测试通知模式 ==="
-            TEST_EMAIL=1 TEST_EMAIL_ONLY=1 python monitor.py
-          elif [ "${{ inputs.force }}" = "true" ]; then
-            echo "=== 强制执行：忽略 4 小时门控 ==="
+            TEST_EMAIL=1 python monitor.py
+          elif [ "$FORCE" = "1" ]; then
             python monitor.py
           else
-            echo "=== 常规模式：受 4 小时门控约束 ==="
-            echo "（schedule 与 Cloudflare 定时器的 workflow_dispatch 都走这里）"
             SCHEDULED_MODE=1 python monitor.py
           fi
 
-      - name: 推送配置诊断
-        if: always() && hashFiles('data/.ran') != ''
-        env:
-          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
-        run: |
-          mkdir -p data
-          {
-            echo "===== 推送配置诊断 $(date -u +'%Y-%m-%d %H:%M:%S UTC') ====="
-            echo "FEISHU_WEBHOOK 长度: ${#FEISHU_WEBHOOK}"
-            echo "FEISHU_SECRET  长度: ${#FEISHU_SECRET}"
-            echo "FEISHU_WEBHOOK 前缀: ${FEISHU_WEBHOOK:0:32}"
-            echo ""
-            echo "===== 脚本日志（末40行） ====="
-            tail -40 data/monitor.log 2>/dev/null || echo "(无日志)"
-            echo ""
-            echo "===== 无效页面样本（若抓取失败） ====="
-            for f in data/bad_*.html; do
-              [ -e "$f" ] || continue
-              echo "--- $f ---"
-              head -c 2500 "$f" | tr -d '\0'
-              echo ""
-              echo "--- 关键特征扫描 ---"
-              echo -n "含 captcha: "; grep -c -i "captcha" "$f" 2>/dev/null || echo 0
-              echo -n "含 productTitle: "; grep -c "productTitle" "$f" 2>/dev/null || echo 0
-              echo -n "含 a-offscreen: "; grep -c "a-offscreen" "$f" 2>/dev/null || echo 0
-              echo -n "含 \$ 价格: "; grep -c -o '\$[0-9]' "$f" 2>/dev/null | head -1 || echo 0
-              echo ""
-            done
-          } > data/diag.txt
-          cat data/diag.txt
-
-      - name: 提交历史快照
+      - name: 持久化卖家精灵基线
         if: always() && hashFiles('data/.ran') != ''
         run: |
           git config user.name "monitor-bot"
           git config user.email "monitor-bot@users.noreply.github.com"
-          git add data/history.json 2>/dev/null || true
-          git add data/last_run.json 2>/dev/null || true
-          git add -f data/diag.txt data/monitor.log 2>/dev/null || true
-          git commit -m "chore: 更新监控历史快照 $(date -u +'%Y-%m-%d %H:%M:%S UTC')" 2>/dev/null || echo "无变更"
-          git push 2>/dev/null || echo "推送失败（可能无变更或无权限）"
+          for file in data/sellersprite_history.json data/sellersprite_last_run.json; do
+            if [ -f "$file" ]; then git add "$file"; fi
+          done
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: 更新卖家精灵监控基线"
+            git push
+          fi
